@@ -118,11 +118,31 @@ class SessionEngineTest {
     }
 
     @Test
-    fun cancel_clockMovedBackwards_endedAtNotBeforeStart() = runTest { // Review Focus 2
+    fun cancel_clockMovedBackwards_isRefused() = runTest { // Review Focus 2 (PR #4 review, minor 1)
         val s = engine.start(timer())
         clock.now = T0.minusSeconds(120)
+        assertFalse(engine.canCancel())
+        assertFalse(engine.cancel())
+        assertEquals(SessionStatus.ONGOING, sessions.get(s.id)!!.status)
+    }
+
+    @Test
+    fun cancel_duringPassInsideWindow_closesPassSessionEnded() = runTest { // PR #4 review, important 1
+        val s = engine.start(timer())
+        advance(3)
+        val p = allowPass(s.id)
+        engine.beginPass(p)
+        advance(4)
         assertTrue(engine.cancel())
-        assertEquals(T0, sessions.get(s.id)!!.endedAt)
+        val pass = passes.get(p)!!
+        assertEquals(com.krunal.rootd.domain.model.PassEndReason.SESSION_ENDED, pass.passEndReason)
+        assertEquals(T0.plusSeconds(7), pass.passEndedAt)
+        assertEquals(4L, pass.usedSeconds)
+        assertNull(passes.activePass(s.id))
+        val after = sessions.get(s.id)!!
+        assertEquals(SessionStatus.CANCELLED, after.status)
+        assertNull(after.pauseStartedAt)
+        assertTrue(coins.settled.isEmpty())
     }
 
     @Test
@@ -419,7 +439,7 @@ class SessionEngineTest {
         advance(60)
         val after = restartedEngine().recover()!!
         assertNull(after.pauseStartedAt)
-        assertEquals(60L, after.pausedSeconds) // not credited as focus
+        assertEquals(0L, after.pausedSeconds) // no pass ever ran → no pause (PR #4 review, important 3)
     }
 
     @Test
@@ -433,6 +453,103 @@ class SessionEngineTest {
         val after = restartedEngine().recover()!!
         assertEquals(T0.plusSeconds(5 * 60), after.pauseStartedAt)
         assertEquals(Duration.ofMinutes(5), SessionTiming.elapsedFocus(after, clock.now))
+    }
+
+    // ---- stale-state guards (PR #4 review, important 2) ----
+
+    @Test
+    fun giveUp_afterTimerAlreadyDue_growsAtPlannedEnd() = runTest {
+        val s = engine.start(timer())
+        advance(25 * 60 + 1)
+        val done = engine.giveUp()
+        assertEquals(SessionStatus.GROWN, done.status)
+        assertNull(done.failReason)
+        assertEquals(T0.plusSeconds(25 * 60), done.endedAt)
+        assertEquals(listOf(s.id), coins.settled)
+    }
+
+    @Test
+    fun stopStopwatch_withExpiredOpenPass_countsFocusAfterExpiry() = runTest {
+        val s = engine.start(stopwatch())
+        advance(8 * 60)
+        val p = allowPass(s.id, minutes = 1)
+        engine.beginPass(p)
+        advance(4 * 60) // pass expired at 9:00, no tick since; now 12:00 wall
+        val done = engine.stopStopwatch()
+        assertEquals(SessionStatus.GROWN, done.status)
+        assertEquals(11L * 60, done.focusSeconds)
+        assertEquals(T0.plusSeconds(9 * 60), passes.get(p)!!.passEndedAt)
+    }
+
+    @Test
+    fun beginPass_afterPreviousPassExpiredWithoutTick_succeeds() = runTest {
+        val s = engine.start(timer(60))
+        advance(5 * 60)
+        val first = allowPass(s.id, minutes = 1)
+        engine.beginPass(first)
+        advance(3 * 60)
+        engine.beginPass(allowPass(s.id))
+        assertEquals(com.krunal.rootd.domain.model.PassEndReason.EXPIRED, passes.get(first)!!.passEndReason)
+        assertEquals(T0.plusSeconds(6 * 60), passes.get(first)!!.passEndedAt)
+        assertEquals(2, sessions.get(s.id)!!.passCount)
+    }
+
+    @Test
+    fun beginPass_whenTimerAlreadyDue_growsSessionAndRefusesPass() = runTest {
+        val s = engine.start(timer())
+        advance(26 * 60)
+        val p = allowPass(s.id)
+        assertThrows(IllegalStateException::class.java) { kotlinx.coroutines.runBlocking { engine.beginPass(p) } }
+        assertEquals(SessionStatus.GROWN, sessions.get(s.id)!!.status)
+        assertEquals(T0.plusSeconds(25 * 60), sessions.get(s.id)!!.endedAt)
+        assertNull(passes.get(p)!!.passStartedAt)
+    }
+
+    // ---- crash between the engine's own writes (PR #4 review, important 3) ----
+
+    @Test
+    fun recover_crashInsideBeginPass_repairsCountersFromPassRows() = runTest {
+        val s = engine.start(timer(60))
+        advance(5 * 60)
+        val p = allowPass(s.id)
+        passes.update(passes.get(p)!!.copy(passStartedAt = clock.now)) // pass row written, session row not
+        advance(60)
+        val after = restartedEngine().recover()!!
+        assertEquals(T0.plusSeconds(5 * 60), after.pauseStartedAt)
+        assertEquals(1, after.passCount)
+        assertTrue(after.tookBreak)
+    }
+
+    @Test
+    fun recover_crashInsideClosePass_endsPauseAtPassEnd() = runTest {
+        val s = engine.start(timer(60))
+        advance(5 * 60)
+        val p = allowPass(s.id, minutes = 3)
+        engine.beginPass(p)
+        advance(60)
+        passes.update( // pass row closed, session pause not cleared
+            passes.get(p)!!.copy(
+                passEndedAt = clock.now, usedSeconds = 60, returnedBeforeExpiry = true,
+                passEndReason = com.krunal.rootd.domain.model.PassEndReason.RETURNED_TO_ROOTD,
+            ),
+        )
+        advance(2 * 3600)
+        val done = restartedEngine().recover()!!
+        assertEquals(60L, done.pausedSeconds)
+        assertEquals(SessionStatus.GROWN, done.status)
+        assertEquals(T0.plusSeconds(61 * 60), done.endedAt)
+    }
+
+    @Test
+    fun recover_crashBeforeSettle_settlesFinishedSession() = runTest {
+        val s = engine.start(timer())
+        advance(25 * 60)
+        sessions.update( // finished but coins never written
+            sessions.get(s.id)!!.copy(status = SessionStatus.GROWN, endedAt = clock.now, focusSeconds = 1500),
+        )
+        assertNull(restartedEngine().recover())
+        assertEquals(listOf(s.id), coins.settled)
+        assertEquals(10, coins.balance())
     }
 
     @Test

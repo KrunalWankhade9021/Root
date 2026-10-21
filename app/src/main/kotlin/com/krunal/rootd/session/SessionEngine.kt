@@ -11,6 +11,7 @@ import com.krunal.rootd.domain.repo.CoinLedger
 import com.krunal.rootd.domain.repo.PassRequestRepository
 import com.krunal.rootd.domain.repo.SessionRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Clock
@@ -32,6 +33,7 @@ class SessionEngine(
 
     private companion object {
         const val MAX_PASSES = 2
+        const val RECOVERY_SETTLE_DAYS = 30L
     }
 
     fun observeOngoing(): Flow<Session?> = sessions.observeOngoing()
@@ -69,25 +71,32 @@ class SessionEngine(
         val s = sessions.getOngoing() ?: return@withLock false
         val now = clock.instant()
         if (!withinCancelWindow(s, now)) return@withLock false
+        // A pass can start inside the 10 s window (fallback / fast LLM); cancelling must close it too.
+        val closed = passes.activePass(s.id)?.let { closePass(s, it, PassEndReason.SESSION_ENDED, now) } ?: s
         sessions.update(
-            s.copy(
+            closed.copy(
                 status = SessionStatus.CANCELLED,
                 endedAt = maxOf(now, s.startedAt),
-                focusSeconds = SessionTiming.elapsedFocus(s, now).seconds,
+                focusSeconds = SessionTiming.elapsedFocus(closed, now).seconds,
             ),
         )
         true
     }
 
     suspend fun giveUp(): Session = lock.withLock {
-        val s = checkNotNull(sessions.getOngoing()) { "No ongoing session" }
-        finish(s, SessionStatus.WITHERED, FailReason.GAVE_UP, clock.instant())
+        val now = clock.instant()
+        val s = catchUp(checkNotNull(sessions.getOngoing()) { "No ongoing session" }, now)
+        if (s.status != SessionStatus.ONGOING) return@withLock s // the timer finished first: it grew
+        finish(s, SessionStatus.WITHERED, FailReason.GAVE_UP, now)
     }
 
     suspend fun stopStopwatch(): Session = lock.withLock {
-        val s = checkNotNull(sessions.getOngoing()) { "No ongoing session" }
-        check(s.mode == SessionMode.STOPWATCH) { "Only stopwatch sessions can be stopped" }
+        check(checkNotNull(sessions.getOngoing()) { "No ongoing session" }.mode == SessionMode.STOPWATCH) {
+            "Only stopwatch sessions can be stopped"
+        }
         val now = clock.instant()
+        val s = catchUp(sessions.getOngoing()!!, now)
+        if (s.status != SessionStatus.ONGOING) return@withLock s // reached the 120-minute cap first
         capInstant(s, now)?.let { return@withLock finish(s, SessionStatus.GROWN, null, it) }
         val focusMinutes = SessionTiming.elapsedFocus(s, now).toMinutes()
         if (focusMinutes >= SessionTiming.STOPWATCH_MIN_MINUTES) {
@@ -108,31 +117,46 @@ class SessionEngine(
      * (closes a pass that expired while the app was dead, completes a timer that is already due).
      */
     suspend fun recover(): Session? = lock.withLock {
+        settleRecentlyFinished()
         val s = sessions.getOngoing() ?: return@withLock null
-        val active = passes.activePass(s.id)
-        val now = clock.instant()
-        val repaired = when {
-            active == null && s.pauseStartedAt != null -> s.copy(
-                pausedSeconds = s.pausedSeconds + nonNegativeSeconds(s.pauseStartedAt, now),
+        val rows = passes.forSession(s.id)
+        val active = rows.firstOrNull { it.passStartedAt != null && it.passEndedAt == null }
+        val started = rows.count { it.passStartedAt != null }
+        var repaired = s.copy(passCount = started, tookBreak = started > 0) // counters follow the pass rows
+        if (active == null && repaired.pauseStartedAt != null) {
+            // Crashed after closing a pass but before resuming: the pause ended when that pass ended.
+            val pauseStart = repaired.pauseStartedAt!!
+            val pauseEnd = rows.mapNotNull { it.passEndedAt }.filter { !it.isBefore(pauseStart) }.maxOrNull() ?: pauseStart
+            repaired = repaired.copy(
+                pausedSeconds = repaired.pausedSeconds + nonNegativeSeconds(pauseStart, pauseEnd),
                 pauseStartedAt = null,
             )
-            active != null && s.pauseStartedAt == null -> s.copy(pauseStartedAt = active.passStartedAt)
-            else -> s
+        } else if (active != null && repaired.pauseStartedAt == null) {
+            repaired = repaired.copy(pauseStartedAt = active.passStartedAt) // crashed between the two writes
         }
         if (repaired != s) sessions.update(repaired)
         tickLocked()
     }
 
+    /** A crash between `finish`'s session write and its coin write leaves a finished, unsettled session. */
+    private suspend fun settleRecentlyFinished() {
+        val today = clock.instant().atZone(clock.zone).toLocalDate()
+        sessions.observeBetween(today.minusDays(RECOVERY_SETTLE_DAYS), today).first()
+            .filter { it.status == SessionStatus.GROWN || it.status == SessionStatus.WITHERED }
+            .forEach { coins.settleSession(it.id) } // idempotent
+    }
+
     /** Starts an allowed pass: pauses the focus clock and marks the tree as "took a break". */
     suspend fun beginPass(passRequestId: Long): Unit = lock.withLock {
-        val s = checkNotNull(sessions.getOngoing()) { "No ongoing session" }
+        val now = clock.instant()
+        val s = catchUp(checkNotNull(sessions.getOngoing()) { "No ongoing session" }, now)
+        check(s.status == SessionStatus.ONGOING) { "The session already ended" }
         val pass = checkNotNull(passes.get(passRequestId)) { "No pass request $passRequestId" }
         check(pass.sessionId == s.id) { "Pass request $passRequestId belongs to another session" }
         check(pass.verdict == Verdict.ALLOW && pass.grantedMinutes > 0) { "Pass request $passRequestId was not allowed" }
         check(pass.passStartedAt == null) { "Pass $passRequestId was already started" }
         check(passes.activePass(s.id) == null) { "Another pass is already running" }
         check(s.passCount < MAX_PASSES) { "Pass limit ($MAX_PASSES) reached" }
-        val now = clock.instant()
         passes.update(pass.copy(passStartedAt = now))
         sessions.update(s.copy(pauseStartedAt = now, tookBreak = true, passCount = s.passCount + 1))
     }
@@ -144,9 +168,14 @@ class SessionEngine(
         closePass(s, pass, reason, clock.instant())
     }
 
-    private suspend fun tickLocked(): Session? {
-        val ongoing = sessions.getOngoing() ?: return null
-        val now = clock.instant()
+    private suspend fun tickLocked(): Session? = sessions.getOngoing()?.let { catchUp(it, clock.instant()) }
+
+    /**
+     * Applies everything that is already true at [now] before any other action: closes a pass whose time ran out
+     * (at its expiry), then completes a due timer / capped stopwatch. Returns the still-ongoing session or the
+     * session it just finished, so callers never act on stale state.
+     */
+    private suspend fun catchUp(ongoing: Session, now: Instant): Session {
         val s = passes.activePass(ongoing.id)
             ?.takeIf { !now.isBefore(expiryOf(it)) }
             ?.let { closePass(ongoing, it, PassEndReason.EXPIRED, now) }
@@ -196,7 +225,7 @@ class SessionEngine(
         return if (focus >= cap) now - (focus - cap) else null
     }
 
-    /** The only way a session leaves ONGOING (apart from cancel). Settles coins for grown/withered. */
+    /** The only way a session becomes grown/withered. Closes a running pass, then settles coins exactly once. */
     private suspend fun finish(session: Session, status: SessionStatus, reason: FailReason?, finishAt: Instant): Session {
         val at = maxOf(finishAt, session.startedAt) // a clock that moved backwards must not end before the start
         val s = passes.activePass(session.id)?.let { closePass(session, it, PassEndReason.SESSION_ENDED, at) } ?: session
@@ -211,6 +240,9 @@ class SessionEngine(
         return done
     }
 
-    private fun withinCancelWindow(s: Session, now: Instant): Boolean =
-        Duration.between(s.startedAt, now) < Duration.ofSeconds(SessionTiming.CANCEL_WINDOW_SECONDS)
+    private fun withinCancelWindow(s: Session, now: Instant): Boolean {
+        val sinceStart = Duration.between(s.startedAt, now)
+        // A clock moved backwards must not reopen the window on a long-running session.
+        return !sinceStart.isNegative && sinceStart < Duration.ofSeconds(SessionTiming.CANCEL_WINDOW_SECONDS)
+    }
 }
