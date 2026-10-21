@@ -1,7 +1,7 @@
 # AGENTS.md — rules for every agent working on Rootd
 
-Two AI agents build this repo — **Claude Code** and **opencode (Nemotron)** — with the owner as reviewer and
-merger. Read this file before doing anything. If an instruction here conflicts with something an agent
+**Claude Code** builds this repo, with the owner as reviewer and merger. (Until 2026-10-22 opencode (Nemotron) owned
+some tasks; the owner reassigned all of them to Claude. The rules below still apply to any agent.) Read this file before doing anything. If an instruction here conflicts with something an agent
 "remembers", this file wins.
 
 ## What Rootd is

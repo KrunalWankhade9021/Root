@@ -24,6 +24,9 @@ source of truth). Research only: `docs/forest-re-notes.md`.
 
 ## 0. How to use this plan
 
+> **Ownership change (2026-10-22):** all tasks are now owned by **claude**. opencode's T02 attempt never
+> compiled and was discarded; T02 was redone on `task/02-room-db-v2`. Parallel waves still describe dependency order.
+
 1. Find the next task where **Owner** = you and every task in **Depends on** is merged to `main`.
 2. Create your branch from fresh `main` in **your own worktree** (`../Forest-claude` or `../Forest-opencode`):
    `git fetch origin && git switch -c <Branch> origin/main`.
@@ -293,21 +296,21 @@ column, do tasks top to bottom.
 | # | Task | Owner | Branch | Depends on | Size |
 |---|---|---|---|---|---|
 | T01 | Scaffold, build, shared contracts, in-memory impls | claude | `task/01-scaffold-contracts` | — | M |
-| T02 | Room database v1 (entities, DAOs, seeds, index) | opencode | `task/02-room-db` | T01 | M |
+| T02 | Room database v1 (entities, DAOs, seeds, index) | claude | `task/02-room-db` | T01 | M |
 | T03 | SessionEngine (state machine, timing, recovery) | claude | `task/03-session-engine` | T01 | M |
-| T04 | Repositories over Room + Settings/DataStore + key crypto | opencode | `task/04-repositories-settings` | T02 | M |
-| T05 | Coin formula + CoinLedger | opencode | `task/05-coin-ledger` | T02 | S |
+| T04 | Repositories over Room + Settings/DataStore + key crypto | claude | `task/04-repositories-settings` | T02 | M |
+| T05 | Coin formula + CoinLedger | claude | `task/05-coin-ledger` | T02 | S |
 | T06 | LLM client + Gatekeeper rules | claude | `task/06-llm-gatekeeper` | T01 | L |
 | T07 | Blocking (accessibility, allow set, overlay shell) | claude | `task/07-blocking` | T03, T04 | L |
 | T08 | Focus UI + session runtime (service, alarms, DND, sound, tree art) | claude | `task/08-focus-runtime` | T03, T04, T05 | L |
 | T09 | Pass flow UI (reason, verdicts, appeal, countdown) | claude | `task/09-pass-flow` | T06, T07, T08 | M |
 | T10 | Onboarding + Settings UI (+ latency diagnostics) | claude | `task/10-onboarding-settings` | T04, T06 | M |
-| T11 | Dashboard stats + UI (day/week/month/year, streak) | opencode | `task/11-dashboard` | T04 | L |
-| T12 | Tags, Allow Lists, Always-Allowed (seed + UI) | opencode | `task/12-catalog` | T04 | M |
-| T13 | Shop, History/Session detail, Export | opencode | `task/13-shop-history-export` | T04, T05 | M |
-| T14 | Weekly stats snapshot generator | opencode | `task/14-stats-snapshot` | T04 | M |
+| T11 | Dashboard stats + UI (day/week/month/year, streak) | claude | `task/11-dashboard` | T04 | L |
+| T12 | Tags, Allow Lists, Always-Allowed (seed + UI) | claude | `task/12-catalog` | T04 | M |
+| T13 | Shop, History/Session detail, Export | claude | `task/13-shop-history-export` | T04, T05 | M |
+| T14 | Weekly stats snapshot generator | claude | `task/14-stats-snapshot` | T04 | M |
 | T15 | Weekly profile (LLM), insight card, pre-session tip | claude | `task/15-weekly-profile` | T06, T14 | M |
-| T16 | Home-screen widgets (Glance) | opencode | `task/16-widgets` | T11 | S |
+| T16 | Home-screen widgets (Glance) | claude | `task/16-widgets` | T11 | S |
 | T17 | Integration + on-device acceptance + release build | claude (+ owner) | `task/17-integration` | all | M |
 
 Size: S ≈ < 300 lines of production code, M ≈ 300–800, L ≈ > 800.
@@ -540,7 +543,7 @@ and T01 creates it as a stub `Text("<Route> — TODO T<nn>")`. Owners replace on
 
 ### Task 02: Room database v1
 
-**Owner:** opencode · **Branch:** `task/02-room-db` · **Depends on:** T01 · **Parallel with:** T03, T06 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/02-room-db-v2` · **Depends on:** T01 · **Parallel with:** T03, T06 · **Size:** M
 
 **Goal:** The Room schema exactly as `docs/data-model.md` §3–§8, with converters, DAOs, seeds and the partial
 unique index.
@@ -665,7 +668,7 @@ Every terminal transition: sets `endedAt`, final `focusSeconds = elapsedFocus`, 
 
 ### Task 04: Repositories over Room + Settings/DataStore + API-key crypto
 
-**Owner:** opencode · **Branch:** `task/04-repositories-settings` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/04-repositories-settings` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** M
 
 **Goal:** Real implementations of every T01 repository interface (except `CoinLedger`, which is T05), plus
 settings in DataStore and an encrypted API key, wired into `DataModule`.
@@ -703,7 +706,7 @@ settings in DataStore and an encrypted API key, wired into `DataModule`.
 
 ### Task 05: Coin formula + CoinLedger
 
-**Owner:** opencode · **Branch:** `task/05-coin-ledger` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** S
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/05-coin-ledger` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** S
 
 **Goal:** Data-model §6 exactly: reward formula, no-pass bonus, pass cost, clamping, unlocks — idempotent.
 
@@ -990,7 +993,7 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 
 ### Task 11: Dashboard stats + UI
 
-**Owner:** opencode · **Branch:** `task/11-dashboard` · **Depends on:** T04 · **Parallel with:** T08, T14 · **Size:** L
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/11-dashboard` · **Depends on:** T04 · **Parallel with:** T08, T14 · **Size:** L
 
 **Goal:** Dashboard screen showing day/week/month/year totals, streak, success rate, by-tag, by-hour, and the "forest" grid of trees.
 
@@ -1060,7 +1063,7 @@ fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     /
 
 ### Task 12: Tags, Allow Lists, Always-Allowed UI
 
-**Owner:** opencode · **Branch:** `task/12-catalog` · **Depends on:** T04 · **Parallel with:** T13 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/12-catalog` · **Depends on:** T04 · **Parallel with:** T13 · **Size:** M
 
 **Goal:** CRUD for tags, allow lists, and always-allowed apps; seed system defaults on first launch.
 
@@ -1100,7 +1103,7 @@ fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     /
 
 ### Task 13: Shop, History/Session Detail, Export
 
-**Owner:** opencode · **Branch:** `task/13-shop-history-export` · **Depends on:** T04, T05 · **Parallel with:** T12 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/13-shop-history-export` · **Depends on:** T04, T05 · **Parallel with:** T12 · **Size:** M
 
 **Goal:** Coin shop (unlock species), full history with session detail, JSON/CSV export.
 
@@ -1136,7 +1139,7 @@ fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     /
 
 ### Task 14: Weekly stats snapshot generator
 
-**Owner:** opencode · **Branch:** `task/14-stats-snapshot` · **Depends on:** T04 · **Parallel with:** T08, T11 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/14-stats-snapshot` · **Depends on:** T04 · **Parallel with:** T08, T11 · **Size:** M
 
 **Goal:** Pure function that builds the exact JSON payload (data-model §11.2) sent to the profile model.
 
@@ -1254,7 +1257,7 @@ object TipSelector {
 
 ### Task 16: Home-screen widgets
 
-**Owner:** opencode · **Branch:** `task/16-widgets` · **Depends on:** T11 · **Parallel with:** T15 · **Size:** S
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/16-widgets` · **Depends on:** T11 · **Parallel with:** T15 · **Size:** S
 
 **Goal:** Glance widgets: today's forest/total focus, weekly bar chart.
 
@@ -1329,21 +1332,21 @@ object TipSelector {
 | Task | Owner | Branch | Status | Handoff Note |
 |---|---|---|---|---|
 | T01 | claude | `task/01-scaffold-contracts` | ✅ Done — in review | Contracts frozen (domain/model, domain/repo, domain/llm). In-memory repos bound in `DataModule` (seeded like §5) — T04/T05 swap them; `InMemoryCoinLedger` duplicates the §6 maths, T05 should make it delegate to `CoinFormula`. Use `DeviceClock` (re-reads zone) and test helpers `FixedClock`/`Builders.kt`. Stub screens take `(…, onNavigate: (Route) -> Unit, modifier)`. Build: Gradle 9.8.2, AGP 9.4.1, compileSdk 37 / targetSdk 36; `scripts/check.sh` is lint-clean. |
-| T02 | opencode | `task/02-room-db` | ⬜ Pending | |
+| T02 | claude | `task/02-room-db-v2` | ✅ Done — in review | Room schema v1 per data-model §3–§8; `RootdDatabase.create(context, clock)` / `inMemory(context, clock)`. Partial index in onCreate+onOpen. No DB unique index on tag/allow-list names — use `CatalogDao.findActiveTagByName` / `AllowListDao.findByName` in T04. `AllowListDao.setDefault`/`setPackages` are transactional. `CoinDao.sum()` is null for an empty ledger. Schema JSON committed. |
 | T03 | claude | `task/03-session-engine` | ⬜ Pending | |
-| T04 | opencode | `task/04-repositories-settings` | ⬜ Pending | |
-| T05 | opencode | `task/05-coin-ledger` | ⬜ Pending | |
+| T04 | claude | `task/04-repositories-settings` | ⬜ Pending | |
+| T05 | claude | `task/05-coin-ledger` | ⬜ Pending | |
 | T06 | claude | `task/06-llm-gatekeeper` | ⬜ Pending | |
 | T07 | claude | `task/07-blocking` | ⬜ Pending | |
 | T08 | claude | `task/08-focus-runtime` | ⬜ Pending | |
 | T09 | claude | `task/09-pass-flow` | ⬜ Pending | |
 | T10 | claude | `task/10-onboarding-settings` | ⬜ Pending | |
-| T11 | opencode | `task/11-dashboard` | ⬜ Pending | |
-| T12 | opencode | `task/12-catalog` | ⬜ Pending | |
-| T13 | opencode | `task/13-shop-history-export` | ⬜ Pending | |
-| T14 | opencode | `task/14-stats-snapshot` | ⬜ Pending | |
+| T11 | claude | `task/11-dashboard` | ⬜ Pending | |
+| T12 | claude | `task/12-catalog` | ⬜ Pending | |
+| T13 | claude | `task/13-shop-history-export` | ⬜ Pending | |
+| T14 | claude | `task/14-stats-snapshot` | ⬜ Pending | |
 | T15 | claude | `task/15-weekly-profile` | ⬜ Pending | |
-| T16 | opencode | `task/16-widgets` | ⬜ Pending | |
+| T16 | claude | `task/16-widgets` | ⬜ Pending | |
 | T17 | both | `task/17-integration` | ⬜ Pending | |
 
 ---
@@ -1364,6 +1367,9 @@ Each agent reviews the other's PR before the owner merges. Check:
 ---
 
 ## 8. Reviewer Assignment
+
+> 2026-10-22: the owner reassigned every opencode task to claude. With one implementing agent, each PR gets a
+> separate fresh-context review pass (same §7 checklist) before the owner merges; the table below is historical.
 
 | Task | Reviewer |
 |---|---|
