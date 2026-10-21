@@ -1328,7 +1328,7 @@ object TipSelector {
 
 | Task | Owner | Branch | Status | Handoff Note |
 |---|---|---|---|---|
-| T01 | claude | `task/01-scaffold-contracts` | ⬜ Pending | |
+| T01 | claude | `task/01-scaffold-contracts` | ✅ Done — in review | Contracts frozen (domain/model, domain/repo, domain/llm). In-memory repos bound in `DataModule` (seeded like §5) — T04/T05 swap them; `InMemoryCoinLedger` duplicates the §6 maths, T05 should make it delegate to `CoinFormula`. Use `DeviceClock` (re-reads zone) and test helpers `FixedClock`/`Builders.kt`. Stub screens take `(…, onNavigate: (Route) -> Unit, modifier)`. Build: Gradle 9.8.2, AGP 9.4.1, compileSdk 37 / targetSdk 36; `scripts/check.sh` is lint-clean. |
 | T02 | opencode | `task/02-room-db` | ⬜ Pending | |
 | T03 | claude | `task/03-session-engine` | ⬜ Pending | |
 | T04 | opencode | `task/04-repositories-settings` | ⬜ Pending | |

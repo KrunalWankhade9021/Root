@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- targetSdk is pinned to 36 on purpose: the design and plan (§1) validate runtime behavior against API 36.
+         compileSdk is 37 only because current AndroidX libraries require it. Revisit in T17 / a later task. -->
+    <issue id="OldTargetApi" severity="ignore" />
+    <!-- Adaptive icons must stay in mipmap-anydpi-v26: with plain mipmap-anydpi, aapt2 fails to link
+         @mipmap/ic_launcher even though minSdk is 29 (verified in T01). -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>
