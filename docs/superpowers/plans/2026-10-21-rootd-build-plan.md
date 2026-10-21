@@ -15,7 +15,7 @@ split by package ownership so they never edit the same file.
 
 **Tech Stack:** Kotlin 2.x, Jetpack Compose (Material 3), Room (KSP), DataStore Preferences, Android Keystore,
 kotlinx.coroutines, kotlinx.serialization, OkHttp, Jetpack Glance (widgets), JUnit 4, kotlinx-coroutines-test,
-Turbine, Robolectric, Gradle 9.3.1 wrapper.
+Turbine, Robolectric, Gradle 9.8.2 wrapper, AGP 9.4.1.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-rootd-design.md` (product) and `docs/data-model.md` (data —
 source of truth). Research only: `docs/forest-re-notes.md`.
@@ -42,9 +42,9 @@ source of truth). Research only: `docs/forest-re-notes.md`.
 
 Every task implicitly includes all of these.
 
-- **Platform:** Android only. `minSdk 29`, `targetSdk 36`, `compileSdk 36`. Device of record: Moto g54 5G.
-- **Build:** Gradle wrapper **9.3.1** (already cached at `~/.gradle/wrapper/dists/gradle-9.3.1-bin`). Latest
-  stable AGP and Kotlin compatible with Gradle 9.3.1, pinned in `gradle/libs.versions.toml` (Task 01 decides the
+- **Platform:** Android only. `minSdk 29`, `targetSdk 36`, `compileSdk 37` (current AndroidX libraries require compiling against 37; runtime behavior targets 36). Device of record: Moto g54 5G.
+- **Build:** Gradle wrapper **9.8.2**, AGP **9.4.1** (AGP 9.3+ does not run on Gradle 9.3.1). Latest
+  stable AGP and Kotlin, pinned in `gradle/libs.versions.toml` (Task 01 decides the
   exact numbers; nobody else changes them without a PR note).
 - **App id / package:** `com.krunal.rootd`. App name: **Rootd**.
 - **Data:** exactly as `docs/data-model.md` (schema version 1). Enum DB values, column names, JSON field names
@@ -514,7 +514,7 @@ and T01 creates it as a stub `Text("<Route> — TODO T<nn>")`. Owners replace on
 
 **Acceptance criteria**
 - AC-1 `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` succeeds from a clean clone.
-- AC-2 Versions pinned in `gradle/libs.versions.toml`; wrapper = 9.3.1; `minSdk 29`, `targetSdk 36`, `compileSdk 36`; Room schema export dir `app/schemas` configured (`exportSchema = true`) even though Room code comes in T02.
+- AC-2 Versions pinned in `gradle/libs.versions.toml`; wrapper = 9.8.2; `minSdk 29`, `targetSdk 36`, `compileSdk 37`; Room schema export dir `app/schemas` configured (`exportSchema = true`) even though Room code comes in T02.
 - AC-3 All contracts above exist with exactly these names/signatures.
 - AC-4 Every `InMemory*` implementation honours the interface comments (ongoing uniqueness, archived filtering, system-default protection, etc.) and is used by `DataModule` bindings.
 - AC-5 App launches on the device to a bottom-navigation shell (Start · Dashboard · Shop · Settings) with stub screens; all routes navigable.
@@ -1328,7 +1328,7 @@ object TipSelector {
 
 | Task | Owner | Branch | Status | Handoff Note |
 |---|---|---|---|---|
-| T01 | claude | `task/01-scaffold-contracts` | ⬜ Pending | |
+| T01 | claude | `task/01-scaffold-contracts` | ✅ Done — in review | Contracts frozen (domain/model, domain/repo, domain/llm). In-memory repos bound in `DataModule` (seeded like §5) — T04/T05 swap them; `InMemoryCoinLedger` duplicates the §6 maths, T05 should make it delegate to `CoinFormula`. Use `DeviceClock` (re-reads zone) and test helpers `FixedClock`/`Builders.kt`. Stub screens take `(…, onNavigate: (Route) -> Unit, modifier)`. Build: Gradle 9.8.2, AGP 9.4.1, compileSdk 37 / targetSdk 36; `scripts/check.sh` is lint-clean. |
 | T02 | opencode | `task/02-room-db` | ⬜ Pending | |
 | T03 | claude | `task/03-session-engine` | ⬜ Pending | |
 | T04 | opencode | `task/04-repositories-settings` | ⬜ Pending | |
