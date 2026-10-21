@@ -24,8 +24,11 @@ source of truth). Research only: `docs/forest-re-notes.md`.
 
 ## 0. How to use this plan
 
+> **Ownership change (2026-10-22):** all tasks are now owned by **claude**. opencode's T02 attempt never
+> compiled and was discarded; T02 was redone on `task/02-room-db-v2`. Parallel waves still describe dependency order.
+
 1. Find the next task where **Owner** = you and every task in **Depends on** is merged to `main`.
-2. Create your branch from fresh `main` in **your own worktree** (`../Forest-claude` or `../Forest-opencode`):
+2. Create your branch from fresh `main` in **your own worktree** (`../Forest-claude`):
    `git fetch origin && git switch -c <Branch> origin/main`.
 3. Read the task's **Interfaces**, **Acceptance criteria** and **Tests** before coding. Read the spec/data-model
    sections the task cites.
@@ -77,20 +80,20 @@ flowchart LR
     UIstart["Start & Focusing screens<br/>(T08 · claude)"]
     UIpass["Pass flow UI<br/>(T09 · claude)"]
     UIset["Onboarding & Settings<br/>(T10 · claude)"]
-    UIdash["Dashboard<br/>(T11 · opencode)"]
-    UIcat["Tags / Allow Lists<br/>(T12 · opencode)"]
-    UIshop["Shop / History / Export<br/>(T13 · opencode)"]
+    UIdash["Dashboard<br/>(T11 · claude)"]
+    UIcat["Tags / Allow Lists<br/>(T12 · claude)"]
+    UIshop["Shop / History / Export<br/>(T13 · claude)"]
     UIins["Insight card & tips<br/>(T15 · claude)"]
-    W["Widgets<br/>(T16 · opencode)"]
+    W["Widgets<br/>(T16 · claude)"]
   end
 
   subgraph Domain["Domain (pure Kotlin)"]
     C["Contracts & models<br/>(T01 · claude)"]
     SE["SessionEngine<br/>(T03 · claude)"]
     GK["Gatekeeper<br/>(T06 · claude)"]
-    CL["CoinLedger<br/>(T05 · opencode)"]
-    ST["DashboardStats<br/>(T11 · opencode)"]
-    SN["StatsSnapshotGenerator<br/>(T14 · opencode)"]
+    CL["CoinLedger<br/>(T05 · claude)"]
+    ST["DashboardStats<br/>(T11 · claude)"]
+    SN["StatsSnapshotGenerator<br/>(T14 · claude)"]
     PG["ProfileGenerator<br/>(T15 · claude)"]
   end
 
@@ -100,8 +103,8 @@ flowchart LR
   end
 
   subgraph Data["Data"]
-    DB[("Room DB v1<br/>(T02 · opencode)")]
-    RP["Repositories + Settings<br/>(T04 · opencode)"]
+    DB[("Room DB v1<br/>(T02 · claude)")]
+    RP["Repositories + Settings<br/>(T04 · claude)"]
     LLM["LlmClient (OkHttp)<br/>(T06 · claude)"]
   end
 
@@ -140,20 +143,20 @@ Base package `com.krunal.rootd` under `app/src/main/kotlin/`. Tests mirror it un
 | `domain/repo` | Repository interfaces | T01 claude (frozen) |
 | `domain/llm` | `LlmClient` interface + result types | T01 claude (frozen) |
 | `data/memory` | In-memory repository implementations (used as test fakes and early bindings) | T01 claude |
-| `data/db` | Room entities, DAOs, converters, `RootdDatabase`, seeds | opencode (T02) |
-| `data/repo` | Room/DataStore-backed repositories, settings, key crypto | opencode (T04) |
-| `coins` | Coin formula + `CoinLedger` implementation | opencode (T05) |
-| `stats` | Dashboard stats queries | opencode (T11) |
-| `insights/snapshot` | Weekly stats snapshot generator + JSON models | opencode (T14) |
+| `data/db` | Room entities, DAOs, converters, `RootdDatabase`, seeds | claude (T02) |
+| `data/repo` | Room/DataStore-backed repositories, settings, key crypto | claude (T04) |
+| `coins` | Coin formula + `CoinLedger` implementation | claude (T05) |
+| `stats` | Dashboard stats queries | claude (T11) |
+| `insights/snapshot` | Weekly stats snapshot generator + JSON models | claude (T14) |
 | `insights/profile` | Profile generation (LLM), tip selection | claude (T15) |
 | `session` | `SessionEngine`, session runtime service, alarms, DND, sound | claude (T03, T08) |
 | `blocking` | Accessibility service, foreground monitor, allow-set cache, overlay | claude (T07) |
 | `gatekeeper` | Gatekeeper rules, prompts, response validation | claude (T06) |
 | `llm` | `OpenAiCompatibleLlmClient` (OkHttp) | claude (T06) |
 | `ui/focus`, `ui/pass`, `ui/settings`, `ui/onboarding`, `ui/insights` | Claude's screens | claude |
-| `ui/dashboard`, `ui/catalog`, `ui/shop`, `ui/history`, `widget` | opencode's screens/widgets | opencode |
-| `ui/nav`, `ui/theme`, `app` (`RootdApp`, `AppContainer`) | Shell, created in T01 | claude (T01). Wiring files: claude edits only `app/FeatureModule.kt`; opencode edits only `data/DataModule.kt` and `app/UiModule.kt` (§2.4) |
-| `data/export` | Data export | opencode (T13) |
+| `ui/dashboard`, `ui/catalog`, `ui/shop`, `ui/history`, `widget` | Dashboard, catalog, shop/history screens and widgets | claude |
+| `ui/nav`, `ui/theme`, `app` (`RootdApp`, `AppContainer`) | Shell, created in T01 | claude. Wiring: data tasks edit `data/DataModule.kt`, feature tasks `app/FeatureModule.kt`, UI-only tasks `app/UiModule.kt` (§2.4) |
+| `data/export` | Data export | claude (T13) |
 
 ### 2.3 Session lifecycle (from data-model §3.3)
 
@@ -184,15 +187,16 @@ Manual DI. `RootdApp : Application` owns one `AppContainer`. To keep the two age
 
 ```kotlin
 class AppContainer(context: Context, clock: Clock) {
-    val data: DataModule = DataModule(context, clock)        // file data/DataModule.kt  — opencode fills (T04, T05)
+    val data: DataModule = DataModule(context, clock)        // file data/DataModule.kt  — data tasks fill (T04, T05)
     val features: FeatureModule = FeatureModule(context, clock, data) // file app/FeatureModule.kt — claude fills
-    val ui: UiModule = UiModule(context, clock, data)                // file app/UiModule.kt     — opencode fills (T11–T13, T16)
+    val ui: UiModule = UiModule(context, clock, data)                // file app/UiModule.kt     — UI tasks fill (T11–T13, T16)
 }
 ```
 T01 creates all three files with every property bound to the `data/memory` implementations. T04/T05 replace
-bindings **inside `DataModule.kt` only**; opencode UI tasks add their ViewModel factories **inside `UiModule.kt` only**;
-claude tasks edit **`FeatureModule.kt` only**. `DataModule` also has `suspend fun onAppStart()` (empty in T01) which
-`RootdApp.onCreate` launches once on a background scope; opencode tasks put their startup work there (T12 seeding,
+bindings **inside `DataModule.kt` only**; dashboard/catalog/shop/history/widget tasks (T11–T13, T16) add their wiring
+**inside `UiModule.kt` only**; the other feature tasks edit **`FeatureModule.kt` only**. (The module split stays
+useful after the 2026-10-22 ownership change: it keeps each task's wiring in one predictable file.) `DataModule` also has `suspend fun onAppStart()` (empty in T01) which
+`RootdApp.onCreate` launches once on a background scope; data/UI tasks put their startup work there (T12 seeding,
 T16 widget refresh hook).
 
 ### 2.5 Gatekeeper sequence ("I need it")
@@ -240,25 +244,24 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   classDef claude fill:#dbe8ff,stroke:#4a7fd1,color:#000
-  classDef opencode fill:#dff3e6,stroke:#2e7d4f,color:#000
   classDef both fill:#f3e6ff,stroke:#9b6fd1,color:#000
 
   T01["T01 Scaffold + contracts"]:::claude
-  T02["T02 Room DB v1"]:::opencode
+  T02["T02 Room DB v1"]:::claude
   T03["T03 SessionEngine"]:::claude
-  T04["T04 Repositories + Settings"]:::opencode
-  T05["T05 Coin ledger"]:::opencode
+  T04["T04 Repositories + Settings"]:::claude
+  T05["T05 Coin ledger"]:::claude
   T06["T06 LLM client + Gatekeeper"]:::claude
   T07["T07 Blocking + overlay"]:::claude
   T08["T08 Focus UI + runtime"]:::claude
   T09["T09 Pass flow UI"]:::claude
   T10["T10 Onboarding + Settings UI"]:::claude
-  T11["T11 Dashboard"]:::opencode
-  T12["T12 Tags + Allow Lists UI"]:::opencode
-  T13["T13 Shop + History + Export"]:::opencode
-  T14["T14 Stats snapshot"]:::opencode
+  T11["T11 Dashboard"]:::claude
+  T12["T12 Tags + Allow Lists UI"]:::claude
+  T13["T13 Shop + History + Export"]:::claude
+  T14["T14 Stats snapshot"]:::claude
   T15["T15 Weekly profile + insights"]:::claude
-  T16["T16 Widgets"]:::opencode
+  T16["T16 Widgets"]:::claude
   T17["T17 Integration + device acceptance"]:::both
 
   T01 --> T02 & T03 & T06
@@ -274,40 +277,41 @@ flowchart TD
   T09 & T10 & T12 & T13 & T15 & T16 --> T17
 ```
 
-### 3.2 Waves (what runs in parallel)
+### 3.2 Build order (one agent since 2026-10-22)
 
-Within a wave, the claude column and the opencode column run at the same time (disjoint files). Inside one
-column, do tasks top to bottom.
+Tasks run one at a time in this order; each starts from fresh `main` once its dependencies are merged (§3.1).
+Stacking a branch on an unmerged dependency is allowed when the PR says so.
 
-| Wave | claude (`../Forest-claude`) | opencode (`../Forest-opencode`) | Gate to next wave |
-|---|---|---|---|
-| 0 | **T01** Scaffold + contracts | — (review T01 PR) | T01 merged |
-| 1 | T03 SessionEngine → T06 LLM + Gatekeeper | T02 Room DB → T04 Repos → T05 Coins | T02–T06 merged |
-| 2 | T07 Blocking → T08 Focus UI + runtime | T11 Dashboard → T14 Snapshot | each task's deps merged |
-| 3 | T10 Onboarding/Settings → T09 Pass flow | T12 Tags/Allow Lists → T13 Shop/History | — |
-| 4 | T15 Weekly profile | T16 Widgets | all merged |
-| 5 | **T17** Integration + device acceptance (claude drives, owner tests on phone; opencode reviews) | | v1 done |
+| Step | Tasks | Gate |
+|---|---|---|
+| 1 | **T01** Scaffold + contracts | merged ✅ |
+| 2 | T02 Room DB · T03 SessionEngine | both merged |
+| 3 | T04 Repositories · T05 Coin ledger · T06 LLM + Gatekeeper | merged |
+| 4 | T07 Blocking · T08 Focus UI + runtime · T11 Dashboard · T14 Snapshot | merged |
+| 5 | T10 Onboarding/Settings · T09 Pass flow · T12 Tags/Allow Lists · T13 Shop/History | merged |
+| 6 | T15 Weekly profile · T16 Widgets | merged |
+| 7 | **T17** Integration + device acceptance (owner tests on the phone) | v1 done |
 
 ### 3.3 Task index
 
 | # | Task | Owner | Branch | Depends on | Size |
 |---|---|---|---|---|---|
 | T01 | Scaffold, build, shared contracts, in-memory impls | claude | `task/01-scaffold-contracts` | — | M |
-| T02 | Room database v1 (entities, DAOs, seeds, index) | opencode | `task/02-room-db` | T01 | M |
+| T02 | Room database v1 (entities, DAOs, seeds, triggers) | claude | `task/02-room-db-v2` | T01 | M |
 | T03 | SessionEngine (state machine, timing, recovery) | claude | `task/03-session-engine` | T01 | M |
-| T04 | Repositories over Room + Settings/DataStore + key crypto | opencode | `task/04-repositories-settings` | T02 | M |
-| T05 | Coin formula + CoinLedger | opencode | `task/05-coin-ledger` | T02 | S |
+| T04 | Repositories over Room + Settings/DataStore + key crypto | claude | `task/04-repositories-settings` | T02 | M |
+| T05 | Coin formula + CoinLedger | claude | `task/05-coin-ledger` | T02 | S |
 | T06 | LLM client + Gatekeeper rules | claude | `task/06-llm-gatekeeper` | T01 | L |
 | T07 | Blocking (accessibility, allow set, overlay shell) | claude | `task/07-blocking` | T03, T04 | L |
 | T08 | Focus UI + session runtime (service, alarms, DND, sound, tree art) | claude | `task/08-focus-runtime` | T03, T04, T05 | L |
 | T09 | Pass flow UI (reason, verdicts, appeal, countdown) | claude | `task/09-pass-flow` | T06, T07, T08 | M |
 | T10 | Onboarding + Settings UI (+ latency diagnostics) | claude | `task/10-onboarding-settings` | T04, T06 | M |
-| T11 | Dashboard stats + UI (day/week/month/year, streak) | opencode | `task/11-dashboard` | T04 | L |
-| T12 | Tags, Allow Lists, Always-Allowed (seed + UI) | opencode | `task/12-catalog` | T04 | M |
-| T13 | Shop, History/Session detail, Export | opencode | `task/13-shop-history-export` | T04, T05 | M |
-| T14 | Weekly stats snapshot generator | opencode | `task/14-stats-snapshot` | T04 | M |
+| T11 | Dashboard stats + UI (day/week/month/year, streak) | claude | `task/11-dashboard` | T04 | L |
+| T12 | Tags, Allow Lists, Always-Allowed (seed + UI) | claude | `task/12-catalog` | T04 | M |
+| T13 | Shop, History/Session detail, Export | claude | `task/13-shop-history-export` | T04, T05 | M |
+| T14 | Weekly stats snapshot generator | claude | `task/14-stats-snapshot` | T04 | M |
 | T15 | Weekly profile (LLM), insight card, pre-session tip | claude | `task/15-weekly-profile` | T06, T14 | M |
-| T16 | Home-screen widgets (Glance) | opencode | `task/16-widgets` | T11 | S |
+| T16 | Home-screen widgets (Glance) | claude | `task/16-widgets` | T11 | S |
 | T17 | Integration + on-device acceptance + release build | claude (+ owner) | `task/17-integration` | all | M |
 
 Size: S ≈ < 300 lines of production code, M ≈ 300–800, L ≈ > 800.
@@ -540,29 +544,29 @@ and T01 creates it as a stub `Text("<Route> — TODO T<nn>")`. Owners replace on
 
 ### Task 02: Room database v1
 
-**Owner:** opencode · **Branch:** `task/02-room-db` · **Depends on:** T01 · **Parallel with:** T03, T06 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/02-room-db-v2` · **Depends on:** T01 · **Parallel with:** T03, T06 · **Size:** M
 
-**Goal:** The Room schema exactly as `docs/data-model.md` §3–§8, with converters, DAOs, seeds and the partial
-unique index.
+**Goal:** The Room schema exactly as `docs/data-model.md` §3–§8, with converters, DAOs, seeds and the
+one-ongoing-session triggers.
 
 **Files:**
 - Create: `app/src/main/kotlin/com/krunal/rootd/data/db/{RootdDatabase.kt, Converters.kt, Seed.kt}`
-- Create: `data/db/entity/{SessionEntity.kt, PassRequestEntity.kt, TagEntity.kt, SpeciesEntity.kt, AllowListEntity.kt, AllowListAppEntity.kt, AlwaysAllowedAppEntity.kt, CoinTransactionEntity.kt, FocusProfileEntity.kt}`
+- Create: `data/db/entity/{SessionEntity.kt, PassRequestEntity.kt, CatalogEntities.kt (tags, species, allow lists, allow-list apps, always-allowed apps), CoinTransactionEntity.kt, FocusProfileEntity.kt}`
 - Create: `data/db/dao/{SessionDao.kt, PassRequestDao.kt, CatalogDao.kt, AllowListDao.kt, CoinDao.kt, FocusProfileDao.kt}`
 - Create: `app/schemas/com.krunal.rootd.data.db.RootdDatabase/1.json` (generated, committed)
 - Test: `app/src/test/kotlin/com/krunal/rootd/data/db/*` (Robolectric, in-memory Room)
 
 **Interfaces**
 - Consumes: enums from T01 (`db` / `fromDb`).
-- Produces: `RootdDatabase.create(context: Context): RootdDatabase` (file DB name `rootd.db`) and
-  `RootdDatabase.inMemory(context: Context): RootdDatabase` (tests); DAOs with suspend/Flow queries that T04/T05
+- Produces: `RootdDatabase.create(context: Context, clock: Clock): RootdDatabase` (file DB name `rootd.db`) and
+  `RootdDatabase.inMemory(context: Context, clock: Clock): RootdDatabase` (tests); DAOs with suspend/Flow queries that T04/T05
   need — at minimum the queries backing every repository method in T01 plus
   `CoinDao.sum(): Int?`, `CoinDao.observeSum(): Flow<Int?>`, `CoinDao.forSession(sessionId): List<CoinTransactionEntity>`,
   and `@Transaction`-friendly insert methods. Entity↔model mappers `toModel()` / `toEntity()` live next to each entity.
 
 **Acceptance criteria**
 - AC-1 Tables, columns, types, nullability, defaults, FKs (with the stated `ON DELETE` actions) and indexes match data-model §3–§8 exactly; `PRAGMA foreign_keys` on.
-- AC-2 Partial unique index created via `RoomDatabase.Callback` in `onCreate` **and** `onOpen` with the exact SQL from data-model §8.
+- AC-2 One-ongoing-session triggers created via `RoomDatabase.Callback` in `onCreate` **and** `onOpen` with the exact SQL from data-model §8; no hand-made indexes on Room tables.
 - AC-3 Seeds on first create (data-model §5): tags `study, work, read, exercise` with distinct colors; species `oak` (id 1, price 0, unlocked), `pine` (id 2, 0, unlocked), `birch` 300, `maple` 500, `cherry` 800, `bamboo` 1000, `baobab` 1500 with `sort_order` in that order; allow list "Default" with `is_default = 1`. Always-allowed apps are **not** seeded here (T12 resolves them on device).
 - AC-4 Timestamps stored as epoch ms, local dates as `yyyy-MM-dd`, enums as their `db` string, booleans 0/1.
 - AC-5 Schema JSON exported to `app/schemas/.../1.json` and committed.
@@ -570,7 +574,7 @@ unique index.
 
 **Tests**
 - `RootdDatabaseSeedTest`: `create_seedsSevenSpeciesWithStartersUnlocked`; `create_seedsOneDefaultAllowList`; `create_seedsFourTags`.
-- `SessionDaoTest`: `insert_secondOngoing_violatesPartialUniqueIndex` (expect `SQLiteConstraintException`); `twoFinishedSessions_allowed`; `deleteTag_setsSessionTagNull`; `deleteAllowList_setsSessionAllowListNull`.
+- `SessionDaoTest`: `insert_secondOngoing_rejectedByTrigger` (expect `SQLiteConstraintException`); `twoFinishedSessions_allowed`; `deleteTag_setsSessionTagNull`; `deleteAllowList_setsSessionAllowListNull`.
 - `PassRequestDaoTest`: `deleteSession_cascadesPassRequests`; `countNonAppealForAppOn_ignoresAppealsAndOtherDates`.
 - `ConvertersTest`: round-trip `Instant`, `LocalDate`, every enum.
 - `CoinDaoTest`: `sum_emptyLedger_isNull`; `sum_mixedAmounts`.
@@ -665,7 +669,7 @@ Every terminal transition: sets `endedAt`, final `focusSeconds = elapsedFocus`, 
 
 ### Task 04: Repositories over Room + Settings/DataStore + API-key crypto
 
-**Owner:** opencode · **Branch:** `task/04-repositories-settings` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/04-repositories-settings` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** M
 
 **Goal:** Real implementations of every T01 repository interface (except `CoinLedger`, which is T05), plus
 settings in DataStore and an encrypted API key, wired into `DataModule`.
@@ -682,7 +686,7 @@ settings in DataStore and an encrypted API key, wired into `DataModule`.
 
 **Acceptance criteria**
 - AC-1 Each repository satisfies the T01 interface contract (same behavior as the `InMemory*` version) — reuse the T01 in-memory test cases as a shared contract test where possible.
-- AC-2 `SessionRepository.insert` translates the partial-index violation into `IllegalStateException`.
+- AC-2 `SessionRepository.insert` translates the one-ongoing trigger violation (`SQLiteConstraintException`) into `IllegalStateException`.
 - AC-3 `AllowListRepository.delete` returns false for the list referenced by the ongoing session and for the last remaining list; `setDefault` keeps exactly one default and mirrors it into `Settings.defaultAllowListId`.
 - AC-4 Settings keys and defaults exactly as data-model §9; `apiKey()` returns `""` when unset; the key is stored only encrypted (`ApiKeyCipher`), never in plain DataStore.
 - AC-5 `DataModule` binds the Room/DataStore implementations; `InMemory*` remain only for tests.
@@ -703,7 +707,7 @@ settings in DataStore and an encrypted API key, wired into `DataModule`.
 
 ### Task 05: Coin formula + CoinLedger
 
-**Owner:** opencode · **Branch:** `task/05-coin-ledger` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** S
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/05-coin-ledger` · **Depends on:** T02 · **Parallel with:** T03, T06 · **Size:** S
 
 **Goal:** Data-model §6 exactly: reward formula, no-pass bonus, pass cost, clamping, unlocks — idempotent.
 
@@ -990,7 +994,7 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 
 ### Task 11: Dashboard stats + UI
 
-**Owner:** opencode · **Branch:** `task/11-dashboard` · **Depends on:** T04 · **Parallel with:** T08, T14 · **Size:** L
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/11-dashboard` · **Depends on:** T04 · **Parallel with:** T08, T14 · **Size:** L
 
 **Goal:** Dashboard screen showing day/week/month/year totals, streak, success rate, by-tag, by-hour, and the "forest" grid of trees.
 
@@ -1060,7 +1064,7 @@ fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     /
 
 ### Task 12: Tags, Allow Lists, Always-Allowed UI
 
-**Owner:** opencode · **Branch:** `task/12-catalog` · **Depends on:** T04 · **Parallel with:** T13 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/12-catalog` · **Depends on:** T04 · **Parallel with:** T13 · **Size:** M
 
 **Goal:** CRUD for tags, allow lists, and always-allowed apps; seed system defaults on first launch.
 
@@ -1100,7 +1104,7 @@ fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     /
 
 ### Task 13: Shop, History/Session Detail, Export
 
-**Owner:** opencode · **Branch:** `task/13-shop-history-export` · **Depends on:** T04, T05 · **Parallel with:** T12 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/13-shop-history-export` · **Depends on:** T04, T05 · **Parallel with:** T12 · **Size:** M
 
 **Goal:** Coin shop (unlock species), full history with session detail, JSON/CSV export.
 
@@ -1136,7 +1140,7 @@ fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     /
 
 ### Task 14: Weekly stats snapshot generator
 
-**Owner:** opencode · **Branch:** `task/14-stats-snapshot` · **Depends on:** T04 · **Parallel with:** T08, T11 · **Size:** M
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/14-stats-snapshot` · **Depends on:** T04 · **Parallel with:** T08, T11 · **Size:** M
 
 **Goal:** Pure function that builds the exact JSON payload (data-model §11.2) sent to the profile model.
 
@@ -1254,7 +1258,7 @@ object TipSelector {
 
 ### Task 16: Home-screen widgets
 
-**Owner:** opencode · **Branch:** `task/16-widgets` · **Depends on:** T11 · **Parallel with:** T15 · **Size:** S
+**Owner:** claude (was opencode — reassigned 2026-10-22) · **Branch:** `task/16-widgets` · **Depends on:** T11 · **Parallel with:** T15 · **Size:** S
 
 **Goal:** Glance widgets: today's forest/total focus, weekly bar chart.
 
@@ -1293,7 +1297,7 @@ object TipSelector {
 
 ### Task 17: Integration + device acceptance + release build
 
-**Owner:** claude (drives) + opencode (reviews) · **Branch:** `task/17-integration` · **Depends on:** all · **Parallel with:** — · **Size:** M
+**Owner:** claude (drives) + owner (tests on device) · **Branch:** `task/17-integration` · **Depends on:** all · **Parallel with:** — · **Size:** M
 
 **Goal:** End-to-end working app on the owner's device (Moto g54 5G), release build, all review checks pass.
 
@@ -1320,7 +1324,7 @@ object TipSelector {
 - [ ] 3. Owner tests AC-1 through AC-3 on device; records any issues as follow-up tasks.
 - [ ] 4. Bump versionName/versionCode; configure release signing (keystore path/passwords in `local.properties`, not committed).
 - [ ] 5. `./gradlew :app:assembleRelease`; install release APK on device; smoke test.
-- [ ] 6. `scripts/check.sh`; push; PR (claude opens, opencode reviews per §7 checklist).
+- [ ] 6. `scripts/check.sh`; push; PR (claude opens; a fresh-context reviewer checks it per §7).
 
 ---
 
@@ -1329,28 +1333,28 @@ object TipSelector {
 | Task | Owner | Branch | Status | Handoff Note |
 |---|---|---|---|---|
 | T01 | claude | `task/01-scaffold-contracts` | ✅ Done — in review | Contracts frozen (domain/model, domain/repo, domain/llm). In-memory repos bound in `DataModule` (seeded like §5) — T04/T05 swap them; `InMemoryCoinLedger` duplicates the §6 maths, T05 should make it delegate to `CoinFormula`. Use `DeviceClock` (re-reads zone) and test helpers `FixedClock`/`Builders.kt`. Stub screens take `(…, onNavigate: (Route) -> Unit, modifier)`. Build: Gradle 9.8.2, AGP 9.4.1, compileSdk 37 / targetSdk 36; `scripts/check.sh` is lint-clean. |
-| T02 | opencode | `task/02-room-db` | ⬜ Pending | |
+| T02 | claude | `task/02-room-db-v2` | ✅ Done — in review | Room schema v1 per data-model §3–§8; `RootdDatabase.create(context, clock)` / `inMemory(context, clock)`. One-ongoing triggers in onCreate+onOpen (not an index — Room migration validation). No DB unique index on tag/allow-list names — use `CatalogDao.findActiveTagByName` / `AllowListDao.findByName` in T04. `AllowListDao.setDefault`/`setPackages` are transactional. `CoinDao.sum()` is null for an empty ledger. `AllowListDao.setDefault(unknown)` is a no-op. Converters **throw** on unknown stored enum values: the blocker (T07) and `recover()` must catch, log and keep going. Schema JSON committed. |
 | T03 | claude | `task/03-session-engine` | ⬜ Pending | |
-| T04 | opencode | `task/04-repositories-settings` | ⬜ Pending | |
-| T05 | opencode | `task/05-coin-ledger` | ⬜ Pending | |
+| T04 | claude | `task/04-repositories-settings` | ⬜ Pending | |
+| T05 | claude | `task/05-coin-ledger` | ⬜ Pending | |
 | T06 | claude | `task/06-llm-gatekeeper` | ⬜ Pending | |
 | T07 | claude | `task/07-blocking` | ⬜ Pending | |
 | T08 | claude | `task/08-focus-runtime` | ⬜ Pending | |
 | T09 | claude | `task/09-pass-flow` | ⬜ Pending | |
 | T10 | claude | `task/10-onboarding-settings` | ⬜ Pending | |
-| T11 | opencode | `task/11-dashboard` | ⬜ Pending | |
-| T12 | opencode | `task/12-catalog` | ⬜ Pending | |
-| T13 | opencode | `task/13-shop-history-export` | ⬜ Pending | |
-| T14 | opencode | `task/14-stats-snapshot` | ⬜ Pending | |
+| T11 | claude | `task/11-dashboard` | ⬜ Pending | |
+| T12 | claude | `task/12-catalog` | ⬜ Pending | |
+| T13 | claude | `task/13-shop-history-export` | ⬜ Pending | |
+| T14 | claude | `task/14-stats-snapshot` | ⬜ Pending | |
 | T15 | claude | `task/15-weekly-profile` | ⬜ Pending | |
-| T16 | opencode | `task/16-widgets` | ⬜ Pending | |
-| T17 | both | `task/17-integration` | ⬜ Pending | |
+| T16 | claude | `task/16-widgets` | ⬜ Pending | |
+| T17 | claude | `task/17-integration` | ⬜ Pending | |
 
 ---
 
 ## 7. Review Checklist (for every PR)
 
-Each agent reviews the other's PR before the owner merges. Check:
+Each PR gets a fresh-context review pass before the owner merges. Check:
 
 - [ ] **Matches spec & data-model** — every enum value, column name, JSON field, hard number copied verbatim.
 - [ ] **Tests prove behavior** — unit tests for all ACs + pinned Review Focus tests exist and pass.
@@ -1364,6 +1368,9 @@ Each agent reviews the other's PR before the owner merges. Check:
 ---
 
 ## 8. Reviewer Assignment
+
+> 2026-10-22: the owner reassigned every opencode task to claude. With one implementing agent, each PR gets a
+> separate fresh-context review pass (same §7 checklist) before the owner merges; the table below is historical.
 
 | Task | Reviewer |
 |---|---|
