@@ -169,25 +169,11 @@ time and `reason_category`; pass verdicts; whether the user returned before the 
 
 ## 7. Data (local only)
 
-*(Shape is my call; the builder may refine names/types.)* SQLite via Room; settings in a key-value store.
-- **Session** (one row = one tree): id, mode (timer/stopwatch), planned_minutes (null for stopwatch),
-  started_at, ended_at, status (ongoing / grown / withered / cancelled), fail_reason (gave_up /
-  stopwatch_too_short), focus_minutes (excludes pass time), species_id, tag_id (optional), allow_list_id,
-  goal_note, took_break. The ongoing session is persisted continuously.
-- **PassRequest** (every ask is logged, allowed or not): id, session_id, app_package, app_label, asked_at,
-  reason_text (never leaves the phone after the gatekeeper call), reason_category, verdict, was_appeal,
-  llm_message, source (llm / fallback), granted_minutes, pass_started_at, pass_ended_at, used_minutes,
-  returned_before_expiry.
-- **CoinTransaction** (ledger): id, at, amount (±), kind (session_reward / no_pass_bonus / pass_cost /
-  species_unlock), session_id?, species_id?. Balance = sum, floored at 0.
-- **Tag:** id, name, color, archived. **Species:** id, name, art_key, price_coins, unlocked_at.
-- **AllowList:** id, name, is_default. **AllowListApp:** allow_list_id, app_package.
-  **AlwaysAllowedApp:** app_package, reason (phone / maps / otp / user).
-- **FocusProfile** (one per week): id, generated_at, period_start, period_end, profile_text, insights (3),
-  suggestion (1), stats_snapshot (exactly what was sent), seen_at.
-- **Settings:** llm_base_url, llm_api_key (encrypted), gatekeeper_model, profile_model, default_mode,
-  default_minutes, default_species, default_allow_list, dnd_enabled, ambient_sound.
-- **Calculated, not stored:** coin balance, streak, period totals, best hours, success rates.
+The full data model — tables, columns, enums, invariants, coin maths, JSON payloads, indexes, migrations — is
+defined in **`docs/data-model.md`**, which is the single source of truth. Summary: `sessions` (one per tree),
+`pass_requests` (every ask, incl. appeals), `coin_transactions` (ledger), `tags`, `species`, `allow_lists`,
+`allow_list_apps`, `always_allowed_apps`, `focus_profiles` (weekly LLM output); settings in DataStore. Day
+boundaries use local time. Coin balance, streak and stats are calculated, not stored.
 
 ## 8. Settings
 

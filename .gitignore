@@ -1,0 +1,37 @@
+# Android / Gradle
+.gradle/
+build/
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Local config and secrets (Groq API key, SDK path) — never commit
+local.properties
+secrets.properties
+*.keystore
+*.jks
+.env
+.env.*
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Brainstorm mockups (local only)
+.superpowers/
+
+# Reverse-engineering artifacts — never commit third-party APKs or decompiled code
+*.xapk
+*.apks
+re-artifacts/
