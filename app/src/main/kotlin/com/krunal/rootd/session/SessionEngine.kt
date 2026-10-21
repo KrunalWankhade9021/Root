@@ -1,5 +1,6 @@
 package com.krunal.rootd.session
 
+import com.krunal.rootd.domain.model.FailReason
 import com.krunal.rootd.domain.model.Session
 import com.krunal.rootd.domain.model.SessionMode
 import com.krunal.rootd.domain.model.SessionStatus
@@ -70,6 +71,58 @@ class SessionEngine(
             ),
         )
         true
+    }
+
+    suspend fun giveUp(): Session = lock.withLock {
+        val s = checkNotNull(sessions.getOngoing()) { "No ongoing session" }
+        finish(s, SessionStatus.WITHERED, FailReason.GAVE_UP, clock.instant())
+    }
+
+    suspend fun stopStopwatch(): Session = lock.withLock {
+        val s = checkNotNull(sessions.getOngoing()) { "No ongoing session" }
+        check(s.mode == SessionMode.STOPWATCH) { "Only stopwatch sessions can be stopped" }
+        val now = clock.instant()
+        capInstant(s, now)?.let { return@withLock finish(s, SessionStatus.GROWN, null, it) }
+        val focusMinutes = SessionTiming.elapsedFocus(s, now).toMinutes()
+        if (focusMinutes >= SessionTiming.STOPWATCH_MIN_MINUTES) {
+            finish(s, SessionStatus.GROWN, null, now)
+        } else {
+            finish(s, SessionStatus.WITHERED, FailReason.STOPWATCH_TOO_SHORT, now)
+        }
+    }
+
+    /**
+     * Completes a due timer or a stopwatch that reached its cap. Returns the ongoing session, the session it just
+     * finished, or null when there is none. Safe to call any time and from anywhere (UI tick, alarm, app start).
+     */
+    suspend fun tick(): Session? = lock.withLock {
+        val s = sessions.getOngoing() ?: return@withLock null
+        val now = clock.instant()
+        val due = when (s.mode) {
+            SessionMode.TIMER -> SessionTiming.timerEnd(s, now)?.takeIf { !now.isBefore(it) }
+            SessionMode.STOPWATCH -> capInstant(s, now)
+        }
+        if (due != null) finish(s, SessionStatus.GROWN, null, due) else s
+    }
+
+    /** The instant a stopwatch reached the 120-minute cap, or null if it hasn't yet. */
+    private fun capInstant(s: Session, now: Instant): Instant? {
+        val cap = Duration.ofMinutes(SessionTiming.STOPWATCH_CAP_MINUTES.toLong())
+        val focus = SessionTiming.elapsedFocus(s, now)
+        return if (focus >= cap) now - (focus - cap) else null
+    }
+
+    /** The only way a session leaves ONGOING (apart from cancel). Settles coins for grown/withered. */
+    private suspend fun finish(s: Session, status: SessionStatus, reason: FailReason?, at: Instant): Session {
+        val done = s.copy(
+            status = status,
+            failReason = reason,
+            endedAt = at,
+            focusSeconds = SessionTiming.elapsedFocus(s, at).seconds,
+        )
+        sessions.update(done)
+        coins.settleSession(done.id)
+        return done
     }
 
     private fun withinCancelWindow(s: Session, now: Instant): Boolean =

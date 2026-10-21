@@ -122,4 +122,117 @@ class SessionEngineTest {
         assertFalse(engine.canCancel())
         assertFalse(engine.cancel())
     }
+
+    // ---- completion ----
+
+    @Test
+    fun tick_before25min_staysOngoing() = runTest {
+        engine.start(timer())
+        advance(25 * 60 - 1)
+        assertEquals(SessionStatus.ONGOING, engine.tick()!!.status)
+        assertTrue(coins.settled.isEmpty())
+    }
+
+    @Test
+    fun tick_at25min_timerGrown_endedAtExactlyPlannedEnd() = runTest {
+        val s = engine.start(timer())
+        advance(25 * 60)
+        val done = engine.tick()!!
+        assertEquals(SessionStatus.GROWN, done.status)
+        assertEquals(T0.plusSeconds(25 * 60), done.endedAt)
+        assertEquals(25L * 60, done.focusSeconds)
+        assertEquals(listOf(s.id), coins.settled)
+        assertNull(sessions.getOngoing())
+    }
+
+    @Test
+    fun tick_runningLate_endedAtIsPlannedEndNotNow() = runTest {
+        engine.start(timer())
+        advance(25 * 60 + 3 * 3600)
+        val done = engine.tick()!!
+        assertEquals(T0.plusSeconds(25 * 60), done.endedAt)
+        assertEquals(25L * 60, done.focusSeconds)
+    }
+
+    @Test
+    fun tick_noSession_returnsNull() = runTest {
+        assertNull(engine.tick())
+    }
+
+    @Test
+    fun stopStopwatch_at9m59s_witheredTooShort() = runTest {
+        engine.start(stopwatch())
+        advance(9 * 60 + 59)
+        val done = engine.stopStopwatch()
+        assertEquals(SessionStatus.WITHERED, done.status)
+        assertEquals(com.krunal.rootd.domain.model.FailReason.STOPWATCH_TOO_SHORT, done.failReason)
+        assertEquals(listOf(done.id), coins.settled)
+    }
+
+    @Test
+    fun stopStopwatch_at10m_grown() = runTest {
+        engine.start(stopwatch())
+        advance(10 * 60)
+        val done = engine.stopStopwatch()
+        assertEquals(SessionStatus.GROWN, done.status)
+        assertNull(done.failReason)
+        assertEquals(600L, done.focusSeconds)
+    }
+
+    @Test
+    fun stopStopwatch_onTimerSession_throws() = runTest {
+        engine.start(timer())
+        assertThrows(IllegalStateException::class.java) { kotlinx.coroutines.runBlocking { engine.stopStopwatch() } }
+    }
+
+    @Test
+    fun tick_stopwatchAt120min_grown() = runTest {
+        engine.start(stopwatch())
+        advance(119 * 60 + 59)
+        assertEquals(SessionStatus.ONGOING, engine.tick()!!.status)
+        advance(1)
+        val done = engine.tick()!!
+        assertEquals(SessionStatus.GROWN, done.status)
+        assertEquals(7200L, done.focusSeconds)
+        assertEquals(T0.plusSeconds(7200), done.endedAt)
+    }
+
+    @Test
+    fun tick_stopwatchCapRunningLate_endedAtTheCapInstant() = runTest {
+        engine.start(stopwatch())
+        advance(5 * 3600)
+        val done = engine.tick()!!
+        assertEquals(T0.plusSeconds(7200), done.endedAt)
+        assertEquals(7200L, done.focusSeconds)
+    }
+
+    @Test
+    fun giveUp_withersWithGaveUp_andSettlesOnce() = runTest {
+        val s = engine.start(timer())
+        advance(5 * 60)
+        val done = engine.giveUp()
+        assertEquals(SessionStatus.WITHERED, done.status)
+        assertEquals(com.krunal.rootd.domain.model.FailReason.GAVE_UP, done.failReason)
+        assertEquals(300L, done.focusSeconds)
+        assertEquals(T0.plusSeconds(300), done.endedAt)
+        assertEquals(listOf(s.id), coins.settled)
+    }
+
+    @Test
+    fun giveUp_noSession_throws() = runTest {
+        assertThrows(IllegalStateException::class.java) { kotlinx.coroutines.runBlocking { engine.giveUp() } }
+    }
+
+    @Test
+    fun finishedSession_neverChangesAgain() = runTest {
+        val s = engine.start(timer())
+        advance(25 * 60)
+        engine.tick()
+        advance(60)
+        assertNull(engine.tick())
+        assertFalse(engine.cancel())
+        assertThrows(IllegalStateException::class.java) { kotlinx.coroutines.runBlocking { engine.giveUp() } }
+        assertEquals(SessionStatus.GROWN, sessions.get(s.id)!!.status)
+        assertEquals(listOf(s.id), coins.settled)
+    }
 }
