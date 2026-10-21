@@ -1,7 +1,7 @@
 # AGENTS.md — rules for every agent working on Rootd
 
-Two AI agents build this repo — **Claude Code** and **opencode (Nemotron)** — with the owner as reviewer and
-merger. Read this file before doing anything. If an instruction here conflicts with something an agent
+**Claude Code** builds this repo, with the owner as reviewer and merger. (Until 2026-10-22 opencode (Nemotron) owned
+some tasks; the owner reassigned all of them to Claude. The rules below still apply to any agent.) Read this file before doing anything. If an instruction here conflicts with something an agent
 "remembers", this file wins.
 
 ## What Rootd is
@@ -23,7 +23,7 @@ first (in the same branch), then the code.
 
 ## Ownership
 
-Every task in the build plan has exactly one owner (`claude` or `opencode`). Work only on your own tasks and
+Every task in the build plan has exactly one owner (currently always `claude`). Work only on your own tasks and
 only in the files the task lists. If you need a change in a file owned by the other agent's task, stop and
 write it up for the owner instead of editing it. Shared boundaries are Kotlin interfaces defined in an early
 plan task; build against the interface, not the other side's implementation.
@@ -66,5 +66,5 @@ with the license noted next to the asset.
 
 ## Reviews
 
-Each agent reviews the other's branch before the owner merges. Reviews check: matches the docs, tests prove the
+Each branch gets a fresh-context review (a separate reviewer that did not write the code) before the owner merges. Reviews check: matches the docs, tests prove the
 behavior, invariants hold, no secret/privacy leaks, no files outside the task's scope.

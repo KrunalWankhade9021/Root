@@ -71,7 +71,7 @@ Related: `docs/superpowers/specs/2026-10-21-rootd-design.md` (product design), `
 | `last_denied_at` | INTEGER ms | **yes** | null | Last deny / accepted push_back; drives the 3-min cooldown. |
 
 ### 3.1 Invariants (enforce in code; test them)
-1. At most one row with `status = ongoing` (enforced by a partial unique index, §8).
+1. At most one row with `status = ongoing` (enforced by two triggers, §8).
 2. `status = ongoing` ⇔ `ended_at IS NULL`.
 3. `fail_reason IS NOT NULL` ⇔ `status = withered`.
 4. `pause_started_at IS NOT NULL` ⇒ `status = ongoing` and exactly one `pass_requests` row for this session has an active pass (`pass_started_at` set, `pass_ended_at` null).
@@ -277,7 +277,6 @@ local date.
 |---|---|---|
 | `sessions` | `(started_local_date)` | Dashboard per-day / heat map |
 | `sessions` | `(started_at)` | Range queries, history list |
-| `sessions` | UNIQUE partial `(status) WHERE status = 'ongoing'` | Invariant §3.1-1 (Room can't declare partial indexes — see SQL below) |
 | `sessions` | `(tag_id)`, `(species_id)`, `(allow_list_id)` | FK indexes |
 | `pass_requests` | `(session_id, asked_at)` | Per-session limits and lists |
 | `pass_requests` | `(app_package, asked_local_date)` | "Today's requests for this app" |
@@ -287,13 +286,23 @@ local date.
 | `always_allowed_apps` | PK `(app_package)` | **Hot path** |
 | `focus_profiles` | `(generated_at)` | Latest profile |
 
-The partial index is created with this exact SQL in `RoomDatabase.Callback.onCreate` (fresh installs) **and**
-re-asserted in `onOpen` (idempotent, protects against it ever being missing); any future migration that
-rebuilds `sessions` must recreate it:
+**One ongoing session (invariant §3.1-1) is enforced by triggers, not an index.** Room can't declare partial
+indexes, and a hand-made index would be seen by Room's post-migration schema validation (which reads every index
+on a table) and crash the first upgrade. Room's validation ignores triggers. They are created with this exact SQL
+in `RoomDatabase.Callback.onCreate` **and** re-asserted in `onOpen` (idempotent; unlike a unique index, creating
+them never fails on rows that already violate the rule). A migration that rebuilds `sessions` must recreate them.
+A violation raises `SQLITE_CONSTRAINT` → `SQLiteConstraintException`.
 ```sql
-CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_single_ongoing
-  ON sessions(status) WHERE status = 'ongoing';
+CREATE TRIGGER IF NOT EXISTS trg_sessions_single_ongoing_insert
+  BEFORE INSERT ON sessions
+  WHEN NEW.status = 'ongoing' AND EXISTS (SELECT 1 FROM sessions WHERE status = 'ongoing')
+  BEGIN SELECT RAISE(ABORT, 'only one ongoing session'); END;
+CREATE TRIGGER IF NOT EXISTS trg_sessions_single_ongoing_update
+  BEFORE UPDATE OF status ON sessions
+  WHEN NEW.status = 'ongoing' AND EXISTS (SELECT 1 FROM sessions WHERE status = 'ongoing' AND id != NEW.id)
+  BEGIN SELECT RAISE(ABORT, 'only one ongoing session'); END;
 ```
+No other hand-made indexes or schema objects on Room tables: every index must be declared on the entity.
 
 The blocker must not query the DB on every window event: cache the active allow set (allow list apps ∪ always
 allowed) in memory when a session starts/changes, and refresh on edits.
@@ -428,4 +437,5 @@ Otherwise → `verdict = deny`, `verdict_source = fallback`. Fallback passes cou
 
 | Schema | Date | Change |
 |---|---|---|
-| 1 | 2026-10-21 | Initial model. Review round (Nemotron): clarified `pass_end_reason`, always-allowed seed order, profile trigger on local dates, partial-index SQL, latency/fallback diagnostics. |
+| 1 | 2026-10-21 | Initial model. Review round (Nemotron): clarified `pass_end_reason`, always-allowed seed order, profile trigger on local dates, single-ongoing SQL, latency/fallback diagnostics. |
+| 1 | 2026-10-22 | Before first release (no installs yet): the one-ongoing-session rule moved from a partial unique index to two triggers (§8) because Room's migration validation would reject a hand-made index. |
