@@ -29,11 +29,12 @@ source of truth). Research only: `docs/forest-re-notes.md`.
    `git fetch origin && git switch -c <Branch> origin/main`.
 3. Read the task's **Interfaces**, **Acceptance criteria** and **Tests** before coding. Read the spec/data-model
    sections the task cites.
-4. Follow the steps (TDD: failing test → implement → passing test → commit).
+4. Follow the steps test-first, even where a task lists a step briefly: write the test → run it and see it fail →
+   implement → run it and see it pass → commit.
 5. Touch only files listed under **Files**. Need something outside? Stop and write a note in the PR; don't edit it.
 6. Done = every acceptance criterion met + `./gradlew :app:testDebugUnitTest :app:lintDebug` green + task box
    ticked in §6 with a 2–3 line handoff note. Push the branch and open a PR to `main`. **Never merge it yourself.**
-7. The other agent reviews the PR (checklist in §8); the owner merges.
+7. The other agent reviews the PR (checklist in §7); the owner merges.
 
 ---
 
@@ -151,7 +152,8 @@ Base package `com.krunal.rootd` under `app/src/main/kotlin/`. Tests mirror it un
 | `llm` | `OpenAiCompatibleLlmClient` (OkHttp) | claude (T06) |
 | `ui/focus`, `ui/pass`, `ui/settings`, `ui/onboarding`, `ui/insights` | Claude's screens | claude |
 | `ui/dashboard`, `ui/catalog`, `ui/shop`, `ui/history`, `widget` | opencode's screens/widgets | opencode |
-| `ui/nav`, `ui/theme`, `app` (`RootdApp`, `AppContainer`) | Shell, created in T01 | claude (T01); others only fill their own `*Module.kt` (§2.4) |
+| `ui/nav`, `ui/theme`, `app` (`RootdApp`, `AppContainer`) | Shell, created in T01 | claude (T01). Wiring files: claude edits only `app/FeatureModule.kt`; opencode edits only `data/DataModule.kt` and `app/UiModule.kt` (§2.4) |
+| `data/export` | Data export | opencode (T13) |
 
 ### 2.3 Session lifecycle (from data-model §3.3)
 
@@ -178,16 +180,20 @@ stateDiagram-v2
 ### 2.4 Dependency wiring (no DI framework)
 
 Manual DI. `RootdApp : Application` owns one `AppContainer`. To keep the two agents out of each other's files,
-`AppContainer` composes two modules:
+`AppContainer` composes three modules:
 
 ```kotlin
 class AppContainer(context: Context, clock: Clock) {
     val data: DataModule = DataModule(context, clock)        // file data/DataModule.kt  — opencode fills (T04, T05)
     val features: FeatureModule = FeatureModule(context, clock, data) // file app/FeatureModule.kt — claude fills
+    val ui: UiModule = UiModule(context, clock, data)                // file app/UiModule.kt     — opencode fills (T11–T13, T16)
 }
 ```
-T01 creates both files with every property bound to the `data/memory` implementations. T04/T05 replace
-bindings **inside `DataModule.kt` only**; claude tasks edit **`FeatureModule.kt` only**.
+T01 creates all three files with every property bound to the `data/memory` implementations. T04/T05 replace
+bindings **inside `DataModule.kt` only**; opencode UI tasks add their ViewModel factories **inside `UiModule.kt` only**;
+claude tasks edit **`FeatureModule.kt` only**. `DataModule` also has `suspend fun onAppStart()` (empty in T01) which
+`RootdApp.onCreate` launches once on a background scope; opencode tasks put their startup work there (T12 seeding,
+T16 widget refresh hook).
 
 ### 2.5 Gatekeeper sequence ("I need it")
 
@@ -349,7 +355,7 @@ in-memory implementations so domain logic can be tested before Room exists.
 - Create: `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`,
   `gradle/wrapper/*`, `gradlew`, `gradlew.bat`, `app/build.gradle.kts`, `app/proguard-rules.pro`
 - Create: `app/src/main/AndroidManifest.xml` (application + `MainActivity` only; later tasks add their own entries)
-- Create: `app/src/main/kotlin/com/krunal/rootd/app/{RootdApp.kt, AppContainer.kt, FeatureModule.kt, MainActivity.kt}`
+- Create: `app/src/main/kotlin/com/krunal/rootd/app/{RootdApp.kt, AppContainer.kt, FeatureModule.kt, UiModule.kt, MainActivity.kt}`
 - Create: `app/src/main/kotlin/com/krunal/rootd/data/DataModule.kt`
 - Create: `app/src/main/kotlin/com/krunal/rootd/domain/model/{Enums.kt, Session.kt, PassRequest.kt, Catalog.kt, Coins.kt, FocusProfile.kt, Settings.kt}`
 - Create: `app/src/main/kotlin/com/krunal/rootd/domain/repo/{SessionRepository.kt, PassRequestRepository.kt, CatalogRepository.kt, AllowListRepository.kt, CoinLedger.kt, FocusProfileRepository.kt, SettingsRepository.kt}`
@@ -502,7 +508,7 @@ sealed interface LlmResult {
 
 **Routes (stub screens)** — `ui/nav/Routes.kt` defines `sealed class Route(val path: String)` with:
 `Onboarding`, `Start`, `Focusing`, `SessionResult(sessionId)`, `Dashboard`, `SessionDetail(sessionId)`,
-`Shop`, `Tags`, `AllowLists`, `AllowListEdit(id)`, `AlwaysAllowed`, `Settings`, `WeeklyInsights`.
+`History`, `Shop`, `Tags`, `AllowLists`, `AllowListEdit(id)`, `AlwaysAllowed`, `Settings`, `WeeklyInsights`.
 Each route's composable lives in its own file in the owner's package (e.g. `ui/dashboard/DashboardScreen.kt`)
 and T01 creates it as a stub `Text("<Route> — TODO T<nn>")`. Owners replace only their own stub file.
 
@@ -527,7 +533,7 @@ and T01 creates it as a stub `Text("<Route> — TODO T<nn>")`. Owners replace on
 - [ ] 3. Add model data classes and repo/LLM interfaces exactly as above. Compile. Commit.
 - [ ] 4. Write the `InMemory*` tests; run → fail. Implement `data/memory/*` with `MutableStateFlow`-backed state; run → pass. Commit.
 - [ ] 5. Add `FixedClock`, `Builders.kt`. Commit.
-- [ ] 6. Add `RootdApp`, `AppContainer`, `DataModule` (bound to in-memory), `FeatureModule` (empty), nav shell + stub screens, theme. Install on device; navigate every route. Commit.
+- [ ] 6. Add `RootdApp`, `AppContainer`, `DataModule` (bound to in-memory, with an empty `onAppStart()` launched from `RootdApp`), `FeatureModule` and `UiModule` (empty), nav shell + stub screens, theme. Install on device; navigate every route. Commit.
 - [ ] 7. Add `scripts/check.sh`; run it → exit 0. Commit, push, open PR.
 
 ---
@@ -854,7 +860,7 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 - Create: `session/{SessionRuntimeService.kt, SessionAlarmScheduler.kt, SessionEndReceiver.kt, BootReceiver.kt, DndController.kt, AmbientSoundPlayer.kt}`
 - Modify: `AndroidManifest.xml` (service `foregroundServiceType="specialUse"`, receivers, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`, `RECEIVE_BOOT_COMPLETED`, `ACCESS_NOTIFICATION_POLICY`), `app/FeatureModule.kt`, `app/RootdApp.kt` (call `SessionEngine.recover()` on start)
 - Create: `app/src/main/res/raw/README.md` (how to add CC0 `ambient_*.ogg` files + license list)
-- Test: `ui/focus/{StartViewModelTest.kt, FocusingViewModelTest.kt}`, `session/DndControllerTest.kt`
+- Test: `ui/focus/{StartViewModelTest.kt, FocusingViewModelTest.kt}`, `session/{DndControllerTest.kt, SessionRuntimeServiceTest.kt, BootReceiverTest.kt}`
 
 **Interfaces**
 - Consumes: `SessionEngine`, `SessionTiming`, `CatalogRepository`, `AllowListRepository`, `SettingsRepository`, `CoinLedger`.
@@ -865,7 +871,9 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 - AC-2 Focusing: tree grows by `growthStage`; countdown (timer) / count-up (stopwatch); "Cancel" for first 10 s then "Give up"; give-up dialog with a 5-second countdown before the button enables; stopwatch "Stop".
 - AC-3 Result: grown/withered tree, focus minutes, coin rows for that session (from `CoinLedger.forSession`), "took a break" chip when `tookBreak`; editable note.
 - AC-4 Foreground service with ongoing notification (time left) runs exactly while a session is ongoing; exact alarm at `timerEnd` (re-scheduled after each pass) calls `tick()` and posts "Your tree has grown" / "Your tree withered"; service stops on terminal status.
-- AC-5 Do Not Disturb: if `settings.dndEnabled`, enable `INTERRUPTION_FILTER_NONE` on session start, restore previous filter on end; no session → never touches DND.
+- AC-5 Do Not Disturb: if `settings.dndEnabled`, and notification-policy access is granted, set `INTERRUPTION_FILTER_PRIORITY` on session start (holds notifications instead of
+  silencing alarms too), save the previous filter in `dndPreviousFilter`, restore it on end; access not granted → skip silently;
+  no session → never touches DND.
 - AC-6 Ambient sound: loop from `res/raw/ambient_<key>.ogg` while `status = ongoing` and not paused; stops instantly on pass start / terminal status; `none` = silent.
 - AC-7 Recovery: on `BootReceiver` or `RootdApp` start, call `SessionEngine.recover()`; if an ongoing session exists, resume Focusing screen with correct remaining time; if timer already due, finish as grown; if pass expired while dead, close it at its expiry instant.
 - AC-8 `TreeArt` is a pure Composable (no I/O) using placeholder shapes (seed/sprout/sapling/tree/withered) drawn with `Canvas`; species key only changes colors; no external assets required for v1.
@@ -877,11 +885,11 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 - `BootReceiverTest`: `recover_resumesOngoing`; `recover_timerPastDue_finishesGrownAtPlannedEnd`.
 
 **Steps**
-- [ ] 1. `SessionTimingTest` (from T03) ensures growth stage boundaries; reuse.
+- [ ] 1. `TreeArt` placeholder for seed/sprout/sapling/tree/withered with a Compose preview per state; commit.
 - [ ] 2. `StartViewModel` + UI; test; commit.
 - [ ] 3. `FocusingViewModel` + UI + give-up dialog; test; commit.
 - [ ] 4. `SessionRuntimeService`, alarm, DND, sound, boot receiver; test; commit.
-- [ ] 5. `TreeArt` placeholder; `SessionResultScreen`; test; commit.
+- [ ] 5. `SessionResultScreen`; test; commit.
 - [ ] 6. Wire in `FeatureModule` + `RootdApp.recover()`; `scripts/check.sh`; push; PR.
 
 ---
@@ -893,26 +901,32 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 **Goal:** The "I need it" flow: reason input (text/voice), verdict display, push_back counter/appeal, pass countdown bubble, overlay return.
 
 **Files:**
-- Create: `ui/pass/{PassReasonScreen.kt, PassReasonViewModel.kt, PassVerdictScreen.kt, PassCountdownBubble.kt}` (replace T01 stubs)
-- Modify: `blocking/OverlayController.kt` (route `NeedIt` to `PassReasonScreen`), `app/FeatureModule.kt`
+- Create: `ui/pass/{PassActivity.kt, PassReasonScreen.kt, PassReasonViewModel.kt, PassVerdictScreen.kt, PassCountdownBubble.kt}` (new — not nav routes)
+- Modify: `blocking/OverlayController.kt` (route `NeedIt` to `PassActivity`; host the countdown bubble window), `AndroidManifest.xml` (`PassActivity`), `app/FeatureModule.kt`
 
 **Interfaces**
 - Consumes: `Gatekeeper`, `SessionEngine`, `SessionTiming`, `Clock`.
 - Produces: `PassReasonViewModel` with `submit(reason: String)`, `appeal(reason: String)`, `acceptPushBack()`.
 
 **Acceptance criteria**
+- AC-0 Presentation: "I need it" hides the overlay and launches `PassActivity` (translucent theme, `FLAG_ACTIVITY_NEW_TASK`,
+  `excludeFromRecents`, own `taskAffinity`) hosting the reason → verdict screens. Rootd is never blocked (T07 `BlockPolicy`), and no
+  pass is active yet, so this does not count as `RETURNED_TO_ROOTD`. Closing it without a pass returns to the overlay; "Back to focus"
+  opens the Focusing screen. `PassCountdownBubble` is a small `TYPE_APPLICATION_OVERLAY` window owned by `OverlayController`.
 - AC-1 `PassReasonScreen`: single-line text field (≤ 300 chars) + mic button (speech-to-text intent); "Submit" calls `Gatekeeper.request()`; shows loading (≤ 4 s) then verdict.
 - AC-2 `PassVerdictScreen`:
   - `allow`: message, minutes, "Start pass" → `SessionEngine.beginPass()` → `PassCountdownBubble` (circular progress, minutes:seconds); on expiry or "Back to focus" → `SessionEngine.endPass()` → overlay.
   - `push_back`: message, counter (e.g. "Can it wait 12 min?"), "Accept" (calls `Gatekeeper.acceptPushBack()` → cooldown starts) or "Appeal" (back to reason input; second appeal not allowed).
-  - `deny`: message, "Back to focus" button disabled for 3 min (countdown shown).
+  - `deny`: message + "Back to focus" (**always enabled**). The overlay's "I need it" is disabled for 3 min with a visible
+    countdown (`RequestAvailability.Cooldown`); "Back to focus" is never disabled in any state.
 - AC-3 `PassCountdownBubble` stays on top of the pass app; tapping it returns to Rootd → `endPass(RETURNED_TO_ROOTD)`; switching to another blocked app shows overlay again (per-app pass).
 - AC-4 Voice input: `RecognizerIntent.ACTION_RECOGNIZE_SPEECH`; result populates text field; works offline if device supports it.
 - AC-5 Error/fallback: if `Gatekeeper` returns `FALLBACK` source, show its message; no retry button.
 
 **Tests**
 - `PassReasonViewModelTest`: `submit_callsGatekeeperWithContext`; `appeal_afterPushBack_callsAppeal`; `appealTwice_throws`.
-- `PassVerdictScreenTest`: `allow_showsCountdown_endsOnExpiry`; `pushBack_accept_setsCooldown`; `deny_buttonLocked3min`.
+- `PassVerdictScreenTest` (Compose UI test in `androidTest`): `allow_showsCountdown_endsOnExpiry`; `pushBack_accept_setsCooldown`;
+  `deny_backToFocusAlwaysEnabled_needItLocked3min`.
 
 **Steps**
 - [ ] 1. `PassReasonViewModel` + screen; test; commit.
@@ -934,15 +948,17 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 - Modify: `app/FeatureModule.kt`
 
 **Interfaces**
-- Consumes: `SettingsRepository`, `AllowListRepository`, `CatalogRepository`, `LlmClient` (for test connection), `SessionEngine` (for checking ongoing).
-- Produces: `OnboardingViewModel` completes when `onboardingDone = true`; `SettingsViewModel` exposes all settings as `MutableStateFlow`.
+- Consumes: `SettingsRepository`, `AllowListRepository`, `CatalogRepository`, `PassRequestRepository` (diagnostics), `LlmClient` (for test connection), `SessionEngine` (for checking ongoing).
+- Produces: `OnboardingViewModel` completes when `onboardingDone = true`; `SettingsViewModel` exposes settings as a read-only `StateFlow<Settings>` plus one update function per setting.
 
 **Acceptance criteria**
-- AC-1 Onboarding flow (linear, no skip):
+- AC-1 Onboarding flow (linear; only the Do Not Disturb step can be skipped):
   1. Welcome + "Rootd uses Accessibility to block apps" → request `ACTION_REQUEST_ACCESSIBILITY_SETTINGS`.
   2. "Rootd draws over other apps" → request `ACTION_MANAGE_OVERLAY_PERMISSION`.
   3. "Usage stats access (fallback)" → request `ACTION_USAGE_ACCESS_SETTINGS`.
-  4. "Do Not Disturb access (optional)" → request `ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS`.
+  3a. Notifications (`POST_NOTIFICATIONS` runtime permission) and exact alarms (`ACTION_REQUEST_SCHEDULE_EXACT_ALARM` when
+      `AlarmManager.canScheduleExactAlarms()` is false) — both required by T08.
+  4. "Do Not Disturb access (optional, Skip button)" → request `ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS`.
   5. LLM setup: base URL, API key (masked), gatekeeper model, profile model; **Test connection** button calls `LlmClient.chatJson()` with a tiny prompt; shows latency + success/failure; saves on success.
   6. Default session prefs (mode, duration, species, allow list).
   7. Done → `onboardingDone = true` → navigates to Start.
@@ -950,14 +966,18 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
   - LLM: base URL, API key (masked, reveal toggle), gatekeeper/profile model, **Test connection** (shows latency ms), timeout ms.
   - Blocking: Allow Lists (nav to T12), Always Allowed (nav to T12), DND toggle.
   - Sounds: ambient sound picker (keys from `AmbientSoundPlayer.available()`).
-  - Data: Export JSON/CSV (calls T13), Reset all data (confirmation, clears Room + DataStore, keeps API key).
+  - Defaults: default mode, default duration, default species, default allow list (spec §8).
+  - (Export lives on the History screen — T13. No "reset all data" in v1.)
   - About: version, license links, "Reset onboarding" (for testing).
 - AC-3 LLM API key is never shown in plain text in UI or logs; `SettingsRepository.setApiKey()` encrypts.
 - AC-4 Settings changes persist immediately via `SettingsRepository.update()`.
+- AC-5 Diagnostics (data-model §13), shown in the LLM section: gatekeeper latency p50 / p95 over the last 7 local days
+  (`verdictSource = LLM` rows from `PassRequestRepository.between`) and fallback rate; "—" when there are no samples.
+  Never sent to the LLM.
 
 **Tests**
 - `OnboardingViewModelTest`: `step1_accessibility_intentFired`; `step2_overlay_intentFired`; `step5_testConnection_success_savesAndAdvances`; `step5_testConnection_failure_showsError`.
-- `SettingsViewModelTest`: `dndToggle_updatesDataStore`; `apiKey_save_encryptsAndPersists`; `testConnection_callsLlmClient`.
+- `SettingsViewModelTest`: `dndToggle_updatesDataStore`; `apiKey_save_encryptsAndPersists`; `testConnection_callsLlmClient`; `diagnostics_p50p95AndFallbackRate_last7Days`; `diagnostics_noSamples_showsDash`.
 
 **Steps**
 - [ ] 1. Onboarding steps 1–4 (permissions); test; commit.
@@ -976,12 +996,13 @@ foreground notification, exact end alarm, restart recovery, Do Not Disturb, ambi
 
 **Files:**
 - Create: `stats/DashboardStats.kt` (pure functions over repo queries)
-- Create: `ui/dashboard/{DashboardScreen.kt, DashboardViewModel.kt, ForestGrid.kt, StatsChart.kt}` (replace T01 stub)
-- Modify: `app/FeatureModule.kt`
+- Create: `ui/dashboard/{DashboardScreen.kt, DashboardViewModel.kt, DayView.kt, WeekView.kt, MonthView.kt, YearView.kt, ForestPatch.kt, FocusTimeline.kt, Charts.kt}` (replace T01 stub)
+- Modify: `app/UiModule.kt`
 
 **Interfaces**
-- Consumes: `SessionRepository`, `PassRequestRepository`, `CatalogRepository`, `CoinLedger`.
-- Produces: `DashboardStats` functions (all suspend, no UI):
+- Consumes: `SessionRepository`, `PassRequestRepository`, `CatalogRepository`, `CoinLedger`; `FocusProfileRepository` (DashboardViewModel only — "new insights" badge).
+- Produces: `class DashboardStats(sessions: SessionRepository, passes: PassRequestRepository, catalog: CatalogRepository,
+  coins: CoinLedger, clock: Clock)` with these members (all return `Flow`, no UI; also consumed by T16):
 ```kotlin
 data class PeriodTotals(val focusMinutes: Int, val sessions: Int, val grown: Int, val withered: Int, val successRate: Double)
 data class TagBreakdown(val tag: Tag, val focusMinutes: Int, val sessions: Int, val successRate: Double)
@@ -993,14 +1014,26 @@ fun observeHourlyBreakdown(start: LocalDate, endInclusive: LocalDate): Flow<List
 fun observeForest(start: LocalDate, endInclusive: LocalDate): Flow<List<ForestTree>>
 fun observeStreak(): Flow<Int>  // consecutive days ending today/yesterday with ≥1 grown
 fun observeCoinBalance(): Flow<Int>
+data class TimelineSegment(val start: LocalTime, val end: LocalTime, val tagId: Long?, val status: SessionStatus)
+data class BestHour(val hour: Int, val sessions: Int, val successRate: Double)
+fun observeDayTimeline(date: LocalDate): Flow<List<TimelineSegment>>          // grown + withered, local time
+fun observeDailyFocusMinutes(start: LocalDate, endInclusive: LocalDate): Flow<Map<LocalDate, Int>> // week bars, month heat map, year
+fun observeBestHours(start: LocalDate, endInclusive: LocalDate): Flow<List<BestHour>> // §13: hours with ≥ 3 sessions, by success rate
+fun observePassCount(start: LocalDate, endInclusive: LocalDate): Flow<Int>     // passes started in range
 ```
 
 **Acceptance criteria**
 - AC-1 Top bar: streak, today's focus time, coin balance (live).
-- AC-2 Segmented control: Day / Week / Month / Year → recalculates all charts from `startedLocalDate` range.
-- AC-3 "Forest" grid: one tile per finished session (grown = tree, withered = withered tree), species art, tag color chip; infinite scroll back in time.
-- AC-4 Charts (Compose Canvas or MPAndroidChart): stacked bar by tag (focus minutes), line by hour (success rate), donut (grown/withered/cancelled).
-- AC-5 Data-model §13 derived values match: streak counts days with ≥1 `grown`; success rate = `grown / (grown + withered)`; day focus = sum `focus_seconds` for that `startedLocalDate`.
+- AC-2 Tabs Day / Week / Month / Year; swiping left/right moves to the previous/next day/week/month/year; all values come from
+  `startedLocalDate` ranges (spec §4.4).
+- AC-3 Day view: that day's trees on a ground patch (grown + withered; cancelled excluded) drawn with `TreeArt`; KPIs focus time,
+  trees, coins earned that day, passes; a timeline of focus segments across the day colored by tag (withered marked); time by tag;
+  session list — tap opens `SessionDetail` (T13).
+- AC-4 Week view: one bar per day (focus minutes), the week's trees, success %, streak, best hours, and a card linking to
+  `WeeklyInsights` (marked "new" while the latest profile's `seenAt` is null). Month view: calendar heat map (darker = more focus;
+  tap a day → Day view), totals, time by tag. Year view: same with 12 months. All charts are drawn with Compose Canvas — no
+  chart library. The top bar has an action that opens `History` (T13).
+- AC-5 Data-model §13 derived values match: streak counts days with ≥1 `grown`; success rate = `grown / (grown + withered)`; day focus = sum `focus_seconds` of `grown` + `withered` sessions with that `startedLocalDate`.
 - AC-6 Midnight crossing: a session starting 23:50 belongs to its `startedLocalDate`; streak doesn't double-count.
 
 **Tests**
@@ -1012,12 +1045,16 @@ fun observeCoinBalance(): Flow<Int>
   - `streak_consecutiveDaysWithGrownSession`
   - `streak_todayEmpty_yesterdayCountsIfGrown`
   - `day_sessionCrossingMidnight_countsOnStartDate` *(Review Focus 2)*
+  - `dayTimeline_segmentsInLocalTime`
+  - `dailyFocusMinutes_coversWholeRange_zeroForEmptyDays`
+  - `bestHours_onlyHoursWithAtLeast3Sessions_rankedBySuccess`
+  - `passCount_countsStartedPassesOnly`
 
 **Steps**
 - [ ] 1. `DashboardStats` functions + tests; commit.
 - [ ] 2. `DashboardViewModel` exposes Flows; test; commit.
-- [ ] 3. `DashboardScreen` + charts + forest grid; commit.
-- [ ] 4. Wire in `FeatureModule`; `scripts/check.sh`; push; PR.
+- [ ] 3. Day / Week / Month / Year views + swipe navigation; commit.
+- [ ] 4. Wire in `UiModule`; `scripts/check.sh`; push; PR.
 
 ---
 
@@ -1029,8 +1066,9 @@ fun observeCoinBalance(): Flow<Int>
 
 **Files:**
 - Create: `ui/catalog/{TagsScreen.kt, TagsViewModel.kt, TagEditDialog.kt, AllowListsScreen.kt, AllowListsViewModel.kt, AllowListEditScreen.kt, AlwaysAllowedScreen.kt, AlwaysAllowedViewModel.kt}` (replace T01 stubs)
-- Create: `util/AppPicker.kt` (system app picker via `PackageManager.queryIntentActivities`)
-- Modify: `app/FeatureModule.kt`, `data/repo/RoomAllowListRepository.kt` (seed system always-allowed apps)
+- Create: `ui/catalog/AppPicker.kt` (app picker via `PackageManager.queryIntentActivities`)
+- Create: `data/repo/AlwaysAllowedSeeder.kt` (run from `DataModule.onAppStart()`)
+- Modify: `app/UiModule.kt`, `data/DataModule.kt` (call the seeder in `onAppStart()`)
 
 **Interfaces**
 - Consumes: `CatalogRepository`, `AllowListRepository`, `SessionRepository` (for delete checks).
@@ -1040,20 +1078,23 @@ fun observeCoinBalance(): Flow<Int>
 - AC-1 Tags: list (archived hidden by default), add/edit (name ≤ 24 chars, unique case-insensitive, color picker), archive (soft delete; kept for history), delete not allowed.
 - AC-2 Allow Lists: list with default badge, create/rename, delete (blocked if used by ongoing session or last list), set default (exactly one), edit packages (multi-select app picker).
 - AC-3 Always Allowed: list with reason badges (phone/maps/otp/user); add user apps (app picker); remove user apps; system defaults (phone, maps, otp) show lock icon and cannot be removed.
-- AC-4 System always-allowed apps seeded on first `RoomAllowListRepository` init: default dialer (`TelecomManager.getDefaultDialerPackage()`), default SMS (`Telephony.Sms.getDefaultSmsPackage()` → `OTP`), geo: intent handler → `MAPS`. Rootd package implicitly allowed (code, not stored).
+- AC-4 `AlwaysAllowedSeeder` follows data-model §5.5 exactly: dialer, SMS/OTP and maps resolved in that order **with the fallback
+  intents**, ignoring the system chooser/resolver, inserted with `isSystemDefault = true`, skipping nulls/duplicates; re-run on every
+  app start so a changed default dialer/SMS app is added; never removes a seeded row. Rootd itself is allowed in code, not stored.
 - AC-5 App picker shows label + package; filters to launchable apps (`CATEGORY_LAUNCHER`).
 
 **Tests**
-- `RoomAllowListRepositorySeedTest`: `seedSystemApps_resolvesOnDevice`; `systemDefaults_notRemovable`.
+- `AlwaysAllowedSeederTest` (Robolectric, shadow `PackageManager`): `seed_dialerFallsBackToActionDial_whenDefaultNull`;
+  `seed_ignoresSystemChooser`; `seed_rerun_addsNewDefaultSms_keepsOldRows`; `systemDefaults_notRemovable`.
 - `TagsViewModelTest`: `add_duplicateNameIgnoringCase_throws`; `archive_hidesFromList`.
 - `AllowListsViewModelTest`: `delete_inUseByOngoing_false`; `setDefault_exactlyOne`.
 
 **Steps**
-- [ ] 1. Seed system always-allowed apps in `RoomAllowListRepository` init; test; commit.
+- [ ] 1. `AlwaysAllowedSeeder` + `DataModule.onAppStart()` call; test; commit.
 - [ ] 2. Tags UI + ViewModel; test; commit.
 - [ ] 3. Allow Lists UI + ViewModel; test; commit.
 - [ ] 4. Always Allowed UI + ViewModel; test; commit.
-- [ ] 5. Wire in `FeatureModule`; `scripts/check.sh`; push; PR.
+- [ ] 5. Wire in `UiModule`; `scripts/check.sh`; push; PR.
 
 ---
 
@@ -1065,19 +1106,20 @@ fun observeCoinBalance(): Flow<Int>
 
 **Files:**
 - Create: `ui/shop/{ShopScreen.kt, ShopViewModel.kt, SpeciesCard.kt}` (replace T01 stub)
-- Create: `ui/history/{HistoryScreen.kt, HistoryViewModel.kt, SessionDetailScreen.kt}` (replace T01 stub)
-- Create: `util/Export.kt` (JSON + CSV serialization)
-- Modify: `app/FeatureModule.kt`
+- Create: `ui/history/{HistoryScreen.kt, HistoryViewModel.kt, SessionDetailScreen.kt}` (replace T01 stubs for `History`, `SessionDetail`)
+- Create: `data/export/Exporter.kt` (JSON + CSV serialization)
+- Modify: `app/UiModule.kt`
 
 **Interfaces**
 - Consumes: `CatalogRepository`, `CoinLedger`, `SessionRepository`, `PassRequestRepository`.
-- Produces: `Export.exportAll(context): Uri` (writes to `Downloads/Rootd/rootd-export-<timestamp>.zip` with `sessions.json`, `passes.json`, `tags.json`, `species.json`, `allow_lists.json`, `coin_transactions.json`, `focus_profiles.json`; CSV mirrors each file).
+- Produces: `class Exporter(context, sessions, passes, catalog, allowLists, coins, profiles)` with `suspend fun exportAll(): Uri` (writes to `Downloads/Rootd/rootd-export-<timestamp>.zip` with `sessions.json`, `passes.json`, `tags.json`, `species.json`, `allow_lists.json`, `coin_transactions.json`, `focus_profiles.json`; CSV mirrors each file).
 
 **Acceptance criteria**
 - AC-1 Shop: grid of species (locked show price + lock; unlocked show checkmark); tap locked with enough coins → `CoinLedger.unlockSpecies()` → success toast + grid updates; not enough coins → error toast.
 - AC-2 History: list by `startedAt` desc; each row shows date, mode, duration, status icon, species, tag, focus minutes, coins earned.
 - AC-3 Session Detail: all session fields + list of passes (app, reason, verdict, minutes, used, returned early) + coin transactions for that session.
-- AC-4 Export: writes zip to `MediaStore.Downloads`; includes all 7 tables as JSON + CSV; `reason_text` included in passes (local export only); opens share sheet on completion.
+- AC-4 Export: writes zip to `MediaStore.Downloads`; includes all 7 tables as JSON + CSV; `reason_text` included in passes (local export only); opens share sheet on completion. Triggered from an Export action in the History screen's top bar. Settings and the API key are
+  never exported.
 - AC-5 Import not in v1 (export only).
 
 **Tests**
@@ -1087,8 +1129,8 @@ fun observeCoinBalance(): Flow<Int>
 **Steps**
 - [ ] 1. `ShopViewModel` + screen; test; commit.
 - [ ] 2. `HistoryViewModel` + list + detail; test; commit.
-- [ ] 3. `Export.kt`; test; commit.
-- [ ] 4. Wire in `FeatureModule`; `scripts/check.sh`; push; PR.
+- [ ] 3. `Exporter`; test; commit.
+- [ ] 4. Wire in `UiModule`; `scripts/check.sh`; push; PR.
 
 ---
 
@@ -1114,12 +1156,15 @@ fun observeCoinBalance(): Flow<Int>
   val byWeekday: List<ByWeekday>,
   val byTag: List<ByTag>,
   val lengthBuckets: List<LengthBucket>,
-  val giveUpAfterMinutesMedian: Int,
+  val giveUpAfterMinutesMedian: Int?,
   val passes: Passes,
   val previousProfileText: String?
 )
 ```
-`Period(start: LocalDate, end: LocalDate)`, `Totals(sessions, grown, withered, cancelled, focusMinutes)`, `ByHour(hour, sessions, successRate)`, `ByWeekday(weekday, focusMinutes, successRate)`, `ByTag(tagName, sessions, successRate, avgMinutes)`, `LengthBucket(bucket, sessions, successRate)`, `Passes(requests, allowed, pushBack, denied, fallback, byApp, byCategory, byHour, returnedBeforeExpiryRate)`.
+`Period(start: LocalDate, end: LocalDate)`, `Totals(sessions, grown, withered, cancelled, focusMinutes)`, `ByHour(hour, sessions, successRate)`, `ByWeekday(weekday, focusMinutes, successRate)`, `ByTag(tag, sessions, successRate, avgMinutes)`, `LengthBucket(bucket, sessions, successRate)`, `Passes(requests, allowed, pushBack, denied, fallback, byApp: List<ByApp>, byCategory: Map<String, Int>, byHour, returnedBeforeExpiryRate)`,
+`ByApp(app, requests, allowed)`. JSON keys are **snake_case exactly as data-model §11.2** (`schema_version`, `by_hour`,
+`success_rate`, `give_up_after_minutes_median`, …) via `@SerialName` on every property. Success rates exclude `cancelled`
+(data-model §13).
 
 **Acceptance criteria**
 - AC-1 `generate(periodStart: LocalDate, periodEndInclusive: LocalDate): StatsSnapshot` is a pure suspend function (no side effects).
@@ -1154,7 +1199,7 @@ fun observeCoinBalance(): Flow<Int>
 **Files:**
 - Create: `insights/profile/{ProfileGenerator.kt, ProfileModels.kt, TipSelector.kt}`
 - Create: `ui/insights/{WeeklyInsightsScreen.kt, WeeklyInsightsViewModel.kt, InsightCard.kt, PreSessionTip.kt}` (replace T01 stub)
-- Modify: `app/FeatureModule.kt`, `app/RootdApp.kt` (trigger generation on first open ≥ 7 days after last)
+- Modify: `app/FeatureModule.kt`, `app/RootdApp.kt` (launch `ProfileGenerator.maybeGenerate()` on app start; due rule in AC-1)
 
 **Interfaces**
 - Consumes: `LlmClient`, `SettingsRepository`, `FocusProfileRepository`, `StatsSnapshotGenerator`, `SessionRepository` (for ≥ 5 sessions check).
@@ -1169,17 +1214,23 @@ data class ProfileResult(val profileText: String, val insights: List<Insight>, v
 @Serializable data class Match(val hours: List<Int>?, val tags: List<String>?)
 @Serializable data class Suggestion(val text: String)
 object TipSelector {
-  fun pickTip(insights: List<Insight>, currentHour: Int, selectedTagId: Long?, tags: List<Tag>): Insight?
+  fun pickTip(insights: List<Insight>, currentHour: Int, selectedTagName: String?): Insight?
 }
 ```
 
 **Acceptance criteria**
-- AC-1 Trigger: on `RootdApp` start, if no profile exists and `finishedSessions ≥ 5`, or `now ≥ latest.generatedAt + 7 days` → call `maybeGenerate()` in background.
-- AC-2 `ProfileGenerator` builds `StatsSnapshot` for the last 7 days (Mon–Sun or rolling 7 days from `periodEnd`? Use `periodEnd = today-1`, `periodStart = periodEnd - 6 days`), calls `LlmClient.chatJson(profileModel, systemPrompt, userPrompt = snapshotJson, 30000 ms)`.
+- AC-1 Trigger (data-model §7, local dates only): on app start, with `today` = local date — if a profile exists, generate when
+  `today ≥ latest.periodEnd + 8 days`; if none exists, generate when ≥ 5 finished sessions exist. Runs in the background.
+- AC-2 Period: after an existing profile, `latest.periodEnd + 1 day … today − 1 day` (all complete days; longer than 7 if the app
+  wasn't opened); first profile: `earliest startedLocalDate … today − 1 day`. Today is never included. Calls
+  `LlmClient.chatJson(profileModel, systemPrompt, userPrompt = snapshot JSON, 30000 ms)`.
 - AC-3 System prompt (in code) asks for: `profile_text` (≤ 120 words), exactly 3 `insights` with `id` + `text` + optional `match` (hours 0–23, tag names), 1 `suggestion` (≤ 160 chars). Response parsed as `ProfileResult` (§11.3).
-- AC-4 On failure (timeout, error, invalid JSON): log, do not write profile, retry next app open.
+- AC-4 On failure (timeout, error, invalid JSON): log the failure kind only (never request/response bodies), do not write a
+  profile, retry on the next app open.
 - AC-5 `WeeklyInsightsScreen`: shows `profileText`, 3 insight cards, suggestion. "Mark seen" sets `seenAt = now`.
-- AC-6 `PreSessionTip` on Start screen: if an unseen insight's `match.hours` contains current hour AND/OR `match.tags` contains selected tag name → show that insight's text as a banner; dismissible.
+- AC-6 `PreSessionTip` on the Start screen: from the latest profile's insights, show the first whose `match.hours` contains the
+  current local hour or whose `match.tags` contains the selected tag name; insights with `match = null` are never tips;
+  dismissible for the current app session.
 - AC-7 Insights only suggest — never auto-change settings/strictness (enforced by UI only showing, no engine hook).
 
 **Tests**
@@ -1188,7 +1239,9 @@ object TipSelector {
   - `maybeGenerate_fewerThan5Sessions_returnsNull`
   - `maybeGenerate_success_writesProfileAndReturnsIt`
   - `maybeGenerate_llmFailure_noProfileWritten`
-- `TipSelectorTest`: `pickTip_matchesHour`; `pickTip_matchesTag`; `pickTip_noMatch_returnsNull`; `pickTip_seen_returnsNull`.
+  - `period_afterGap_coversAllDaysSinceLastProfile`
+  - `firstProfile_periodStartsAtEarliestSession_excludesToday`
+- `TipSelectorTest`: `pickTip_matchesHour`; `pickTip_matchesTag`; `pickTip_noMatch_returnsNull`; `pickTip_nullMatch_neverPicked`.
 
 **Steps**
 - [ ] 1. `ProfileModels` + JSON parsing; test; commit.
@@ -1207,19 +1260,22 @@ object TipSelector {
 
 **Files:**
 - Create: `widget/{RootdWidgetReceiver.kt, TodayWidget.kt, WeeklyWidget.kt, WidgetProvider.kt}`
-- Create: `widget/WidgetStats.kt` (reads Room via `InMemory*` path or direct DAO calls with `context.database`)
-- Modify: `AndroidManifest.xml` (receiver, `android:exported="true"`, `android:permission="android.permission.BIND_APPWIDGET"`), `app/build.gradle.kts` (Glance dependencies)
+- Create: `widget/WidgetStats.kt` (reads through `DashboardStats` at `(context.applicationContext as RootdApp).container.ui.dashboardStats` — never DAOs directly)
+- Create: `res/drawable/widget_tree_{seed,sprout,sapling,tree,withered}.xml` (original vector drawables; Glance can't render the Compose `TreeArt`)
+- Modify: `AndroidManifest.xml` (receiver, `android:exported="true"`, `android:permission="android.permission.BIND_APPWIDGET"`), `gradle/libs.versions.toml` + `app/build.gradle.kts` (Glance dependency; note it in the PR per §1), `app/UiModule.kt`, `data/DataModule.kt` (refresh hook in `onAppStart()`)
 
 **Interfaces**
-- Consumes: `SessionRepository` (via `Room`), `CatalogRepository` (species art keys).
+- Consumes: `DashboardStats` (T11) via `container.ui.dashboardStats`, `SessionRepository.observeOngoing()` for the refresh hook, `CatalogRepository` (species keys for tinting).
 - Produces: Two widget sizes (2×2 and 4×2):
   - **Today widget**: today's focus minutes, grown/withered count, tiny forest row (last 5 trees).
   - **Weekly widget**: 7-day bar chart (focus minutes per day), streak, success rate.
 
 **Acceptance criteria**
-- AC-1 Widgets update on: session end, `ACTION_TIME_TICK`, `ACTION_DATE_CHANGED`, app open (via `GlanceAppWidget.update()`).
+- AC-1 Refresh: a collector started from `DataModule.onAppStart()` calls `GlanceAppWidget.updateAll()` whenever the ongoing
+  session ends; on app open; and every 30 min via `updatePeriodMillis` (also covers the date change). No `ACTION_TIME_TICK`
+  (it can't be registered in the manifest).
 - AC-2 No session ongoing → shows today's totals from completed sessions only.
-- AC-3 Tiny forest uses same `TreeArt` composable (Glance-compatible vector drawables).
+- AC-3 Tiny forest uses the `widget_tree_*` vector drawables (same five states as `TreeArt`), tinted per species.
 - AC-4 Tap widget → opens Rootd (Dashboard for weekly, Focusing if ongoing else Start for today).
 - AC-5 Works on Moto g54 5G launcher (tested).
 
@@ -1264,7 +1320,7 @@ object TipSelector {
 - [ ] 3. Owner tests AC-1 through AC-3 on device; records any issues as follow-up tasks.
 - [ ] 4. Bump versionName/versionCode; configure release signing (keystore path/passwords in `local.properties`, not committed).
 - [ ] 5. `./gradlew :app:assembleRelease`; install release APK on device; smoke test.
-- [ ] 6. `scripts/check.sh`; push; PR (claude opens, opencode reviews per §8 checklist).
+- [ ] 6. `scripts/check.sh`; push; PR (claude opens, opencode reviews per §7 checklist).
 
 ---
 
@@ -1272,7 +1328,7 @@ object TipSelector {
 
 | Task | Owner | Branch | Status | Handoff Note |
 |---|---|---|---|---|
-| T01 | claude | `task/01-scaffold-contracts` | ✅ Merged | Scaffold, contracts, in-memory repos, nav shell. All ACs met. |
+| T01 | claude | `task/01-scaffold-contracts` | ⬜ Pending | |
 | T02 | opencode | `task/02-room-db` | ⬜ Pending | |
 | T03 | claude | `task/03-session-engine` | ⬜ Pending | |
 | T04 | opencode | `task/04-repositories-settings` | ⬜ Pending | |
@@ -1336,6 +1392,24 @@ Each agent reviews the other's PR before the owner merges. Check:
 | Version | Date | Tasks | Notes |
 |---|---|---|---|
 | 1.0.0 | 2026-10-21 | T01–T17 | Initial v1 build plan. |
+
+---
+
+## 10. Spec coverage
+
+| Spec section | Task(s) |
+|---|---|
+| §4.1 Focus session (timer/stopwatch, cancel 10 s, give up, growth, persistence, restart) | T03, T08 |
+| §4.2 Blocking, Allow Lists, Always Allowed, screen lock, DND | T07, T12, T08 (DND), T10 (permissions) |
+| §4.3 Coins, no-pass bonus, pass cost, shop, ambient sounds | T05, T13, T08 (sounds) |
+| §4.4 Tags, dashboard (day/week/month/year, streak), history, export | T12, T11, T13 |
+| §4.5 Widgets | T16 |
+| §5 Gatekeeper (flow, hard rules, fallback, limits, context, output, tone) | T06, T07, T09 |
+| §6 Pattern observer (stats, weekly profile, insight card, pre-session tip) | T14, T15, T11 (insights link) |
+| §7 Data (local only) | T01, T02, T04 |
+| §8 Settings (LLM, test connection, lists, DND, defaults, export) | T10, T12, T13 |
+| §9 Success measures (completion, returned-before-expiry, passes trend) | T11, T14 |
+| data-model §13 diagnostics (latency p50/p95, fallback rate) | T10 |
 
 ---
 
