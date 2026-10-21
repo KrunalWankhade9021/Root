@@ -27,7 +27,7 @@ class SessionDaoTest {
     fun close() = db.close()
 
     @Test
-    fun insert_secondOngoing_violatesPartialUniqueIndex() = runTest {
+    fun insert_secondOngoing_rejectedByTrigger() = runTest {
         dao.insert(sessionRow())
         assertThrows(SQLiteConstraintException::class.java) {
             runBlocking { dao.insert(sessionRow(startedAt = T0.plusSeconds(60))) }
@@ -35,7 +35,7 @@ class SessionDaoTest {
     }
 
     @Test
-    fun update_secondSessionToOngoing_violatesPartialUniqueIndex() = runTest {
+    fun update_secondSessionToOngoing_rejectedByTrigger() = runTest {
         dao.insert(sessionRow())
         val id = dao.insert(sessionRow(status = SessionStatus.GROWN))
         assertThrows(SQLiteConstraintException::class.java) {

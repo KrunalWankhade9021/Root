@@ -37,7 +37,8 @@ abstract class AllowListDao {
     @Query("DELETE FROM allow_lists WHERE id = :id")
     abstract suspend fun delete(id: Long)
 
-    @Query("UPDATE allow_lists SET is_default = (id = :id)")
+    /** No-op for an unknown id, so a stale id can never leave zero defaults (data-model §5.3). */
+    @Query("UPDATE allow_lists SET is_default = (id = :id) WHERE EXISTS (SELECT 1 FROM allow_lists WHERE id = :id)")
     protected abstract suspend fun markOnlyDefault(id: Long)
 
     /** Makes [id] the single default list. */

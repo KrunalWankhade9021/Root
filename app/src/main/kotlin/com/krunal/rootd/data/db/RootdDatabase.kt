@@ -45,9 +45,18 @@ abstract class RootdDatabase : RoomDatabase() {
     companion object {
         const val FILE_NAME = "rootd.db"
 
-        /** Exact SQL from data-model §8. Room can't declare partial indexes, so the callback creates it. */
-        const val SINGLE_ONGOING_INDEX_SQL =
-            "CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_single_ongoing ON sessions(status) WHERE status = 'ongoing'"
+        /**
+         * Exact SQL from data-model §8: one ongoing session, enforced by triggers. Not a partial index — Room's
+         * post-migration validation reads every index on a table and would reject a hand-made one.
+         */
+        val SINGLE_ONGOING_SQL = listOf(
+            "CREATE TRIGGER IF NOT EXISTS trg_sessions_single_ongoing_insert BEFORE INSERT ON sessions " +
+                "WHEN NEW.status = 'ongoing' AND EXISTS (SELECT 1 FROM sessions WHERE status = 'ongoing') " +
+                "BEGIN SELECT RAISE(ABORT, 'only one ongoing session'); END",
+            "CREATE TRIGGER IF NOT EXISTS trg_sessions_single_ongoing_update BEFORE UPDATE OF status ON sessions " +
+                "WHEN NEW.status = 'ongoing' AND EXISTS (SELECT 1 FROM sessions WHERE status = 'ongoing' AND id != NEW.id) " +
+                "BEGIN SELECT RAISE(ABORT, 'only one ongoing session'); END",
+        )
 
         fun create(context: Context, clock: Clock): RootdDatabase =
             Room.databaseBuilder(context.applicationContext, RootdDatabase::class.java, FILE_NAME)
@@ -63,13 +72,13 @@ abstract class RootdDatabase : RoomDatabase() {
 
         private fun callback(clock: Clock) = object : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
-                db.execSQL(SINGLE_ONGOING_INDEX_SQL)
+                SINGLE_ONGOING_SQL.forEach(db::execSQL)
                 Seed.run(db, clock.instant())
             }
 
-            /** Re-asserted on every open (idempotent) so the invariant index can never be missing. */
+            /** Re-asserted on every open (idempotent; never fails on existing bad rows, unlike a unique index). */
             override fun onOpen(db: SupportSQLiteDatabase) {
-                db.execSQL(SINGLE_ONGOING_INDEX_SQL)
+                SINGLE_ONGOING_SQL.forEach(db::execSQL)
             }
         }
     }

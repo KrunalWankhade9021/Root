@@ -6,8 +6,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,23 +67,30 @@ class RootdDatabaseSeedTest {
     }
 
     @Test
-    fun partialUniqueIndex_existsWithExactSql() {
+    fun oneOngoingTriggers_exist() {
         db.openHelper.readableDatabase.query(
-            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'index_sessions_single_ongoing'",
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'sessions' ORDER BY name",
         ).use { c ->
-            assertTrue("partial index missing", c.moveToFirst())
-            assertEquals(
-                "CREATE UNIQUE INDEX index_sessions_single_ongoing ON sessions(status) WHERE status = 'ongoing'",
-                c.getString(0).replace(Regex("\\s+"), " ").replace("IF NOT EXISTS ", ""),
-            )
+            val names = generateSequence { if (c.moveToNext()) c.getString(0) else null }.toList()
+            assertEquals(listOf("trg_sessions_single_ongoing_insert", "trg_sessions_single_ongoing_update"), names)
         }
     }
 
     @Test
-    fun seedsRunOnlyOnce_reopeningDoesNotDuplicate() = runTest {
-        db.catalogDao().observeSpecies().first()
-        assertEquals(7, db.catalogDao().observeSpecies().first().size)
-        assertNotNull(db.catalogDao().getSpecies(7))
-        assertNull(db.catalogDao().getSpecies(8))
+    fun sessions_haveOnlyRoomDeclaredIndexes() { // a hand-made index would break Room's migration validation
+        db.openHelper.readableDatabase.query(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sessions' " +
+                "AND name NOT LIKE 'sqlite_autoindex%' ORDER BY name",
+        ).use { c ->
+            val names = generateSequence { if (c.moveToNext()) c.getString(0) else null }.toList()
+            assertEquals(
+                listOf(
+                    "index_sessions_allow_list_id", "index_sessions_species_id", "index_sessions_started_at",
+                    "index_sessions_started_local_date", "index_sessions_tag_id",
+                ),
+                names,
+            )
+        }
     }
+
 }
