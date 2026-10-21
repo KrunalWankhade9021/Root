@@ -15,7 +15,7 @@ gatekeeper for mid-session "pass" requests and weekly LLM insights. One user, no
 |---|---|
 | `docs/superpowers/specs/2026-10-21-rootd-design.md` | Product behavior, rules, limits, UX flow |
 | `docs/data-model.md` | Every table, column, enum value, invariant, coin formula, JSON payload |
-| `docs/plans/` (build plan, once written) | Task list, owners, dependencies, acceptance tests |
+| `docs/superpowers/plans/2026-10-21-rootd-build-plan.md` | Task list, owners, dependencies, acceptance tests, progress tracker |
 | `docs/forest-re-notes.md` | Research on Forest only — **behavior reference, never code to copy** |
 
 If code and a doc disagree, the doc wins and the code is a bug. To change behavior or data: change the doc
