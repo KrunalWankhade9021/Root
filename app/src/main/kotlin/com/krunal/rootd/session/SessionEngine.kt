@@ -1,9 +1,12 @@
 package com.krunal.rootd.session
 
 import com.krunal.rootd.domain.model.FailReason
+import com.krunal.rootd.domain.model.PassEndReason
+import com.krunal.rootd.domain.model.PassRequest
 import com.krunal.rootd.domain.model.Session
 import com.krunal.rootd.domain.model.SessionMode
 import com.krunal.rootd.domain.model.SessionStatus
+import com.krunal.rootd.domain.model.Verdict
 import com.krunal.rootd.domain.repo.CoinLedger
 import com.krunal.rootd.domain.repo.PassRequestRepository
 import com.krunal.rootd.domain.repo.SessionRepository
@@ -13,7 +16,6 @@ import kotlinx.coroutines.sync.withLock
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
-import java.time.LocalDate
 
 /**
  * All session rules (design §4.1, data-model §3): one ongoing session at a time, the 10-second cancel window,
@@ -27,6 +29,10 @@ class SessionEngine(
     private val clock: Clock,
 ) {
     private val lock = Mutex()
+
+    private companion object {
+        const val MAX_PASSES = 2
+    }
 
     fun observeOngoing(): Flow<Session?> = sessions.observeOngoing()
 
@@ -44,7 +50,7 @@ class SessionEngine(
             mode = request.mode,
             plannedMinutes = request.plannedMinutes,
             startedAt = now,
-            startedLocalDate = LocalDate.ofInstant(now, clock.zone),
+            startedLocalDate = now.atZone(clock.zone).toLocalDate(), // LocalDate.ofInstant needs API 34; minSdk is 29
             speciesId = request.speciesId,
             tagId = request.tagId,
             allowListId = request.allowListId,
@@ -66,7 +72,7 @@ class SessionEngine(
         sessions.update(
             s.copy(
                 status = SessionStatus.CANCELLED,
-                endedAt = now,
+                endedAt = maxOf(now, s.startedAt),
                 focusSeconds = SessionTiming.elapsedFocus(s, now).seconds,
             ),
         )
@@ -95,15 +101,93 @@ class SessionEngine(
      * Completes a due timer or a stopwatch that reached its cap. Returns the ongoing session, the session it just
      * finished, or null when there is none. Safe to call any time and from anywhere (UI tick, alarm, app start).
      */
-    suspend fun tick(): Session? = lock.withLock {
+    suspend fun tick(): Session? = lock.withLock { tickLocked() }
+
+    /**
+     * Run once on process start: repairs a pause/pass mismatch left by a crash, then behaves like [tick]
+     * (closes a pass that expired while the app was dead, completes a timer that is already due).
+     */
+    suspend fun recover(): Session? = lock.withLock {
         val s = sessions.getOngoing() ?: return@withLock null
+        val active = passes.activePass(s.id)
         val now = clock.instant()
+        val repaired = when {
+            active == null && s.pauseStartedAt != null -> s.copy(
+                pausedSeconds = s.pausedSeconds + nonNegativeSeconds(s.pauseStartedAt, now),
+                pauseStartedAt = null,
+            )
+            active != null && s.pauseStartedAt == null -> s.copy(pauseStartedAt = active.passStartedAt)
+            else -> s
+        }
+        if (repaired != s) sessions.update(repaired)
+        tickLocked()
+    }
+
+    /** Starts an allowed pass: pauses the focus clock and marks the tree as "took a break". */
+    suspend fun beginPass(passRequestId: Long): Unit = lock.withLock {
+        val s = checkNotNull(sessions.getOngoing()) { "No ongoing session" }
+        val pass = checkNotNull(passes.get(passRequestId)) { "No pass request $passRequestId" }
+        check(pass.sessionId == s.id) { "Pass request $passRequestId belongs to another session" }
+        check(pass.verdict == Verdict.ALLOW && pass.grantedMinutes > 0) { "Pass request $passRequestId was not allowed" }
+        check(pass.passStartedAt == null) { "Pass $passRequestId was already started" }
+        check(passes.activePass(s.id) == null) { "Another pass is already running" }
+        check(s.passCount < MAX_PASSES) { "Pass limit ($MAX_PASSES) reached" }
+        val now = clock.instant()
+        passes.update(pass.copy(passStartedAt = now))
+        sessions.update(s.copy(pauseStartedAt = now, tookBreak = true, passCount = s.passCount + 1))
+    }
+
+    /** Ends the running pass now (no-op if none is running). See [closePass] for late returns. */
+    suspend fun endPass(reason: PassEndReason): Unit = lock.withLock {
+        val s = sessions.getOngoing() ?: return@withLock
+        val pass = passes.activePass(s.id) ?: return@withLock
+        closePass(s, pass, reason, clock.instant())
+    }
+
+    private suspend fun tickLocked(): Session? {
+        val ongoing = sessions.getOngoing() ?: return null
+        val now = clock.instant()
+        val s = passes.activePass(ongoing.id)
+            ?.takeIf { !now.isBefore(expiryOf(it)) }
+            ?.let { closePass(ongoing, it, PassEndReason.EXPIRED, now) }
+            ?: ongoing
         val due = when (s.mode) {
             SessionMode.TIMER -> SessionTiming.timerEnd(s, now)?.takeIf { !now.isBefore(it) }
             SessionMode.STOPWATCH -> capInstant(s, now)
         }
-        if (due != null) finish(s, SessionStatus.GROWN, null, due) else s
+        return if (due != null) finish(s, SessionStatus.GROWN, null, due) else s
     }
+
+    /**
+     * Ends [pass] at [at] and resumes the focus clock. A pass can never outlast its grant: if [at] is past the
+     * expiry, it is closed at the expiry instant with reason EXPIRED (whatever was asked), so returning late or
+     * a tick after process death never counts extra minutes as paused or used.
+     */
+    private suspend fun closePass(s: Session, pass: PassRequest, reason: PassEndReason, at: Instant): Session {
+        val start = checkNotNull(pass.passStartedAt)
+        val expiry = expiryOf(pass)
+        val (endAt, endReason) = if (at.isAfter(expiry)) expiry to PassEndReason.EXPIRED else at to reason
+        passes.update(
+            pass.copy(
+                passEndedAt = endAt,
+                passEndReason = endReason,
+                usedSeconds = nonNegativeSeconds(start, endAt).coerceAtMost(pass.grantedMinutes * 60L),
+                returnedBeforeExpiry = endReason == PassEndReason.RETURNED_TO_ROOTD,
+            ),
+        )
+        val resumed = s.copy(
+            pausedSeconds = s.pausedSeconds + nonNegativeSeconds(s.pauseStartedAt ?: start, endAt),
+            pauseStartedAt = null,
+        )
+        sessions.update(resumed)
+        return resumed
+    }
+
+    private fun expiryOf(pass: PassRequest): Instant =
+        checkNotNull(pass.passStartedAt) + Duration.ofMinutes(pass.grantedMinutes.toLong())
+
+    private fun nonNegativeSeconds(from: Instant, to: Instant): Long =
+        Duration.between(from, to).seconds.coerceAtLeast(0)
 
     /** The instant a stopwatch reached the 120-minute cap, or null if it hasn't yet. */
     private fun capInstant(s: Session, now: Instant): Instant? {
@@ -113,7 +197,9 @@ class SessionEngine(
     }
 
     /** The only way a session leaves ONGOING (apart from cancel). Settles coins for grown/withered. */
-    private suspend fun finish(s: Session, status: SessionStatus, reason: FailReason?, at: Instant): Session {
+    private suspend fun finish(session: Session, status: SessionStatus, reason: FailReason?, finishAt: Instant): Session {
+        val at = maxOf(finishAt, session.startedAt) // a clock that moved backwards must not end before the start
+        val s = passes.activePass(session.id)?.let { closePass(session, it, PassEndReason.SESSION_ENDED, at) } ?: session
         val done = s.copy(
             status = status,
             failReason = reason,
